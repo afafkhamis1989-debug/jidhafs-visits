@@ -7,11 +7,11 @@ from openpyxl import load_workbook
 from difflib import SequenceMatcher
 from io import BytesIO
 
-TEMPLATE1_PATH = r"C:\Users\Afaf\OneDrive - Ministry of Education\Desktop\app\templates.xlsx"
-TEMPLATE2_PATH = r"C:\Users\Afaf\OneDrive - Ministry of Education\Desktop\app\templates2.xlsx"
-HEADER_PATH = r"C:\Users\Afaf\OneDrive - Ministry of Education\Desktop\app\header.png"
-DATA_PATH = r"C:\Users\Afaf\OneDrive - Ministry of Education\جدحفص الثانوية\2024-2025\الزيارات الصفية\Jidhafs.xlsx"
+HEADER_PATH = "header.png"
+TEMPLATE1_PATH = "templates.xlsx"
+TEMPLATE2_PATH = "templates2.xlsx"
 
+DATA_PATH = "Jidhafs.xlsx"
 st.set_page_config(page_title="نظام الزيارات الصفية", layout="wide")
 
 st.markdown("""

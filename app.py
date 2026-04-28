@@ -62,7 +62,7 @@ st.markdown("""
     border: 1px solid #999;
     font-size: 14px;
 
-    margin-top: -6px;   /* هذا السر 👈 يلصقها بالأزرار */
+    margin-top: 2px;   /* كان 6px */
     margin-bottom: 0px;
 
     height: 34px;

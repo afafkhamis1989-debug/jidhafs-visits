@@ -6,6 +6,8 @@ import tempfile
 from openpyxl import load_workbook
 from difflib import SequenceMatcher
 from io import BytesIO
+import gspread
+from google.oauth2.service_account import Credentials
 
 HEADER_PATH = "header.png"
 TEMPLATE1_PATH = "templates.xlsx"

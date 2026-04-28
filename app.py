@@ -302,48 +302,24 @@ if page == "إدخال زيارة صفية":
                 )
 
             with col_buttons:
-                b1, b2, b3, b4 = st.columns(4)
+                short_options = ["جزئياً", "يفي", "يتجاوز", "كثير"]
 
-                with b1:
-                    if st.button("جزئياً", key=f"btn_{item_number}_1"):
-                        st.session_state[choice_key] = "يفي بالتوقعات جزئياً"
+                selected_short = st.radio(
+                    "",
+                    short_options,
+                    horizontal=True,
+                    key=f"radio_{item_number}",
+                    label_visibility="collapsed"
+                )
 
-                with b2:
-                    if st.button("يفي", key=f"btn_{item_number}_2"):
-                        st.session_state[choice_key] = "يفي بالتوقعات"
+                value_map = {
+                    "جزئياً": "يفي بالتوقعات جزئياً",
+                    "يفي": "يفي بالتوقعات",
+                    "يتجاوز": "يتجاوز التوقعات",
+                    "كثير": "يتجاوز التوقعات بكثير"
+                }
 
-                with b3:
-                    if st.button("يتجاوز", key=f"btn_{item_number}_3"):
-                        st.session_state[choice_key] = "يتجاوز التوقعات"
-
-                with b4:
-                    if st.button("كثير", key=f"btn_{item_number}_4"):
-                        st.session_state[choice_key] = "يتجاوز التوقعات بكثير"
-
-                selected_value = st.session_state[choice_key]
-
-                st.markdown("<div style='margin-top:-14px'></div>", unsafe_allow_html=True)
-
-                if selected_value:
-                    st.markdown(
-                        f"""
-                        <div class="selected-answer" style="background:{judgment_colors[selected_value]};">
-                            {selected_value}
-                        </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
-                else:
-                    st.markdown(
-                        """
-                        <div class="selected-answer" style="background:#f3f4f6;">
-                            لم يتم الاختيار
-                        </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
-
-            answers[f"بند {item_number}"] = st.session_state[choice_key]
+                answers[f"بند {item_number}"] = value_map[selected_short]
 
     strengths = st.text_area("نجاحات المعلم")
     improvements = st.text_area("جوانب بحاجة إلى تطوير")

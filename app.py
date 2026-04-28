@@ -10,38 +10,49 @@ st.set_page_config(page_title="نظام الزيارات الصفية", layout="
 st.markdown("""
 <style>
 .stApp {
-    background: linear-gradient(135deg, #f7f9ff, #fff8f1);
     direction: rtl;
+    background: linear-gradient(135deg, #f7f9ff, #fff8f1);
 }
 .big-title {
     text-align: center;
     font-size: 46px;
     font-weight: 900;
-    color: #1f2937;
+    color: red;
     margin-bottom: 25px;
 }
-.section-title {
-    text-align: right;
-    font-size: 28px;
+.domain-title {
+    background: #d9eaf7;
+    color: #003b5c;
+    padding: 14px;
+    border-radius: 12px;
+    font-size: 25px;
     font-weight: 900;
-    margin-top: 30px;
-    margin-bottom: 15px;
+    text-align: center;
+    margin-top: 28px;
+    margin-bottom: 12px;
 }
 .item-box {
-    background: white;
+    background: #f2f2f2;
+    border: 1px solid #cfcfcf;
+    border-radius: 10px;
     padding: 14px;
-    border-radius: 14px;
-    margin-bottom: 8px;
-    border-right: 5px solid #93c5fd;
+    font-size: 20px;
+    font-weight: 700;
+    text-align: right;
+    min-height: 58px;
 }
-.domain-title {
-    background: #dbeafe;
-    padding: 12px;
-    border-radius: 14px;
-    font-size: 22px;
-    font-weight: 900;
-    margin-top: 25px;
-    margin-bottom: 12px;
+.legend {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin: 15px 0 25px 0;
+    flex-wrap: wrap;
+}
+.legend-box {
+    padding: 10px 18px;
+    border-radius: 10px;
+    font-weight: 800;
+    border: 1px solid #999;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -51,7 +62,7 @@ try:
 except:
     pass
 
-st.markdown('<div class="big-title">📊 نظام الزيارات الصفية</div>', unsafe_allow_html=True)
+st.markdown('<div class="big-title">تحليل الزيارات الصفية</div>', unsafe_allow_html=True)
 
 @st.cache_data(ttl=60)
 def load_teachers():
@@ -236,24 +247,36 @@ if page == "إدخال زيارة صفية":
 
         st.markdown("### بنود التقييم")
 
+        st.markdown("""
+        <div class="legend">
+            <div class="legend-box" style="background:#d9ead3;">يتجاوز التوقعات بكثير</div>
+            <div class="legend-box" style="background:#cfe2f3;">يتجاوز التوقعات</div>
+            <div class="legend-box" style="background:#fff2cc;">يفي بالتوقعات</div>
+            <div class="legend-box" style="background:#ead1dc;">يفي بالتوقعات جزئياً</div>
+        </div>
+        """, unsafe_allow_html=True)
+
         answers = {}
 
         for domain, items in items_structure.items():
             st.markdown(f'<div class="domain-title">{domain}</div>', unsafe_allow_html=True)
 
             for item_number, item_text in items:
-                st.markdown(
-                    f'<div class="item-box"><b>{item_number}.</b> {item_text}</div>',
-                    unsafe_allow_html=True
-                )
+                col_text, col_choice = st.columns([4, 1.4])
 
-                answers[f"بند {item_number}"] = st.selectbox(
-                "",
-                judgements,
-                key=f"item_{item_number}",
-                label_visibility="collapsed"
-                )
+                with col_text:
+                    st.markdown(
+                        f'<div class="item-box"><b>{item_number}.</b> {item_text}</div>',
+                        unsafe_allow_html=True
+                    )
 
+                with col_choice:
+                    answers[f"بند {item_number}"] = st.selectbox(
+                        "",
+                        judgements,
+                        key=f"item_{item_number}",
+                        label_visibility="collapsed"
+                    )
 
         strengths = st.text_area("نجاحات المعلم")
         improvements = st.text_area("جوانب بحاجة إلى تطوير")

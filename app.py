@@ -248,9 +248,11 @@ if page == "إدخال زيارة صفية":
                 )
 
                 answers[f"بند {item_number}"] = st.selectbox(
-                f"الحكم ({item_number})",
+                "",
                 judgements,
-                key=f"item_{item_number}"
+                key=f"item_{item_number}",
+                label_visibility="collapsed"
+)
 )
 
         strengths = st.text_area("نجاحات المعلم")

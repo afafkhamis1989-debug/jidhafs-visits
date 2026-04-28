@@ -148,7 +148,7 @@ page = st.sidebar.radio(
 # تحميل الشيت
 # =======================
 try:
-    df = load_sheet_data()
+    df = pd.DataFrame()
 except Exception as e:
     st.error("حدث خطأ في تحميل البيانات من Google Sheet")
     st.write(e)

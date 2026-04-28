@@ -247,11 +247,7 @@ if page == "إدخال زيارة صفية":
                     unsafe_allow_html=True
                 )
 
-                answers[f"بند {item_number}"] = st.selectbox(
-                    "اختاري الحكم",
-                    judgements,
-                    key=f"item_{item_number}"
-                )
+                
 
         strengths = st.text_area("نجاحات المعلم")
         improvements = st.text_area("جوانب بحاجة إلى تطوير")

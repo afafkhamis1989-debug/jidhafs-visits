@@ -55,13 +55,17 @@ st.markdown("""
     border: 1px solid #999;
 }
 .selected-answer {
-    height: 58px;   /* نفس item-box */
+    text-align: center;
+    font-weight: 700;
+    padding: 4px 8px;
+    border-radius: 8px;
+    margin-top: 4px;
+    border: 1px solid #999;
+    font-size: 14px;
+    min-height: 30px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-weight: 800;
-    border-radius: 10px;
-    border: 1px solid #999;
 }
 </style>
 """, unsafe_allow_html=True)

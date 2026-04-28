@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 import requests
 
 GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbziZ27mG690ZT02YN1LqbvWJLZ-rprnHK9qmXDDXcTvQVmnB-Phpm0J4DKjsg6Ts07xJQ/exec"
@@ -28,24 +27,6 @@ st.markdown("""
     margin-top: 30px;
     margin-bottom: 15px;
 }
-.card {
-    background: white;
-    border-radius: 20px;
-    padding: 20px;
-    box-shadow: 0 6px 18px rgba(0,0,0,0.07);
-    border-right: 7px solid #6366f1;
-    text-align: center;
-}
-.card-title {
-    font-size: 17px;
-    color: #6b7280;
-    font-weight: 700;
-}
-.card-value {
-    font-size: 36px;
-    color: #111827;
-    font-weight: 900;
-}
 </style>
 """, unsafe_allow_html=True)
 
@@ -56,26 +37,20 @@ except:
 
 st.markdown('<div class="big-title">📊 نظام الزيارات الصفية</div>', unsafe_allow_html=True)
 
-# =======================
-# تحميل بيانات المعلمات من شيت Teachers
-# =======================
 @st.cache_data(ttl=60)
 def load_teachers():
     res = requests.get(GOOGLE_SCRIPT_URL, timeout=20)
     res.raise_for_status()
     return pd.DataFrame(res.json())
 
-
 def send_to_google_sheet(row):
     payload = {
         "sheet_name": "Classroom_Visits",
         "row": row
     }
-
     res = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=20)
     res.raise_for_status()
     return res.json()
-
 
 def normalize_text(x):
     return (
@@ -87,10 +62,6 @@ def normalize_text(x):
         .replace("ة", "ه")
     )
 
-
-# =======================
-# صلاحيات الدخول
-# =======================
 dept_passwords = {
     "admin1825": "الكل",
     "Arab1111": "قسم اللغة العربية",
@@ -137,9 +108,6 @@ page = st.sidebar.radio(
     ["لوحة التحليل", "إدخال زيارة صفية"]
 )
 
-# =======================
-# تحميل بيانات المعلمات
-# =======================
 try:
     teachers_df = load_teachers()
     teachers_df.columns = [str(c).strip() for c in teachers_df.columns]
@@ -148,9 +116,6 @@ except Exception as e:
     st.write(e)
     st.stop()
 
-# =======================
-# صفحة إدخال زيارة صفية
-# =======================
 if page == "إدخال زيارة صفية":
     st.markdown("## 📝 استمارة الزيارات الصفية")
 
@@ -174,6 +139,40 @@ if page == "إدخال زيارة صفية":
         "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو"
     ]
 
+    if "القسم الأكاديمي" not in teachers_df.columns or "اسم المعلمة" not in teachers_df.columns:
+        st.error("لازم يكون في شيت Teachers عمودين باسم: القسم الأكاديمي، اسم المعلمة")
+        st.stop()
+
+    # اختيار القسم والمعلمة خارج الفورم عشان تتغير القائمة مباشرة
+    departments = sorted(
+        teachers_df["القسم الأكاديمي"]
+        .dropna()
+        .astype(str)
+        .str.strip()
+        .unique()
+    )
+
+    if allowed_dept == "الكل":
+        selected_dept = st.selectbox("القسم الأكاديمي", departments)
+    else:
+        selected_dept = allowed_dept
+        st.info(f"القسم: {selected_dept}")
+
+    filtered_teachers = teachers_df[
+        teachers_df["القسم الأكاديمي"].apply(normalize_text)
+        == normalize_text(selected_dept)
+    ]["اسم المعلمة"].dropna().astype(str).str.strip().unique()
+
+    filtered_teachers = sorted([
+        name for name in filtered_teachers
+        if name and name.lower() != "nan"
+    ])
+
+    if filtered_teachers:
+        teacher_name = st.selectbox("اسم المعلمة", filtered_teachers)
+    else:
+        teacher_name = st.text_input("اسم المعلمة")
+
     with st.form("visit_form"):
         school_year = st.selectbox(
             "السنة الدراسية",
@@ -185,39 +184,6 @@ if page == "إدخال زيارة صفية":
             ["الفصل الدراسي الأول", "الفصل الدراسي الثاني"]
         )
 
-        if "القسم الأكاديمي" not in teachers_df.columns or "اسم المعلمة" not in teachers_df.columns:
-            st.error("لازم يكون في شيت Teachers عمودين باسم: القسم الأكاديمي، اسم المعلمة")
-            st.stop()
-
-        departments = sorted(
-            teachers_df["القسم الأكاديمي"]
-            .dropna()
-            .astype(str)
-            .str.strip()
-            .unique()
-        )
-
-        if allowed_dept == "الكل":
-            selected_dept = st.selectbox("القسم الأكاديمي", departments)
-        else:
-            selected_dept = allowed_dept
-            st.info(f"القسم: {selected_dept}")
-
-        filtered_teachers = teachers_df[
-            teachers_df["القسم الأكاديمي"].apply(normalize_text)
-            == normalize_text(selected_dept)
-        ]["اسم المعلمة"].dropna().astype(str).str.strip().unique()
-
-        filtered_teachers = sorted([
-            name for name in filtered_teachers
-            if name and name.lower() != "nan"
-        ])
-
-        if filtered_teachers:
-            teacher_name = st.selectbox("اسم المعلمة", filtered_teachers)
-        else:
-            teacher_name = st.text_input("اسم المعلمة")
-
         month = st.selectbox("الشهر", months)
 
         visit_type = st.selectbox("نوع الزيارة", visitor_types)
@@ -225,6 +191,7 @@ if page == "إدخال زيارة صفية":
         st.markdown("### بنود التقييم")
 
         answers = {}
+
         for i in range(1, 19):
             answers[f"بند {i}"] = st.selectbox(
                 f"بند {i}",
@@ -277,20 +244,11 @@ if page == "إدخال زيارة صفية":
             st.error("حدث خطأ أثناء الإرسال")
             st.write(e)
 
-# =======================
-# لوحة التحليل مؤقتًا
-# =======================
 else:
     st.markdown("## 📊 لوحة التحليل")
-
-    st.info("لوحة التحليل سيتم ربطها ببيانات Classroom_Visits بعد التأكد من عمل الاستمارة والإرسال.")
-
-    st.markdown("### 👩‍🏫 بيانات المعلمات من شيت Teachers")
+    st.info("لوحة التحليل بنرجع نربطها بعد ما نخلص الاستمارة.")
     st.dataframe(teachers_df, use_container_width=True)
 
-# =======================
-# الفوتر
-# =======================
 st.markdown("""
 <hr style="margin-top:40px;">
 

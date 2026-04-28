@@ -266,7 +266,7 @@ if page == "إدخال زيارة صفية":
 
     month = st.selectbox("الشهر", months)
 
-    visit_type = st.selectbox("نوع الزيارة", visitor_types)
+    visit_type = st.selectbox("الزائر", visitor_types)
 
     st.markdown(
         '<div style="text-align:center; font-size:30px; font-weight:900; margin-top:25px;">بنود التقييم</div>',

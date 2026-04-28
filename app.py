@@ -56,13 +56,16 @@ st.markdown("""
 }
 .selected-answer {
     text-align: center;
-    font-weight: 700;
+    font-weight: 800;
     padding: 4px 8px;
     border-radius: 8px;
-    margin-top: 4px;
     border: 1px solid #999;
     font-size: 14px;
-    min-height: 30px;
+
+    margin-top: 2px;   /* كان 6px */
+    margin-bottom: 0px;
+
+    height: 34px;
     display: flex;
     align-items: center;
     justify-content: center;

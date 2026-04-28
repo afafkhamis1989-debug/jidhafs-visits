@@ -55,11 +55,12 @@ st.markdown("""
     border: 1px solid #999;
 }
 .selected-answer {
-    text-align: center;
-    font-weight: 900;
-    padding: 8px;
+    height: 58px;   /* نفس item-box */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
     border-radius: 10px;
-    margin-top: 6px;
     border: 1px solid #999;
 }
 </style>

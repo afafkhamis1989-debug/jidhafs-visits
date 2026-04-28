@@ -366,7 +366,7 @@ if page == "إدخال زيارة صفية":
             try:
                 result = send_to_google_sheet(row)
                 st.success("تم حفظ الزيارة بنجاح ✅")
-                st.write(result)
+                
 
                 for i in range(1, 19):
                     st.session_state[f"answer_{i}"] = ""

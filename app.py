@@ -40,6 +40,8 @@ st.markdown("""
     font-weight: 700;
     text-align: right;
     min-height: 58px;
+    display: flex;
+    align-items: center;
 }
 .legend {
     display: flex;
@@ -49,7 +51,7 @@ st.markdown("""
     flex-wrap: wrap;
 }
 .legend-box {
-    padding: 10px 18px;
+    padding: 8px 16px;
     border-radius: 10px;
     font-weight: 800;
     border: 1px solid #999;
@@ -61,14 +63,20 @@ st.markdown("""
     border-radius: 8px;
     border: 1px solid #999;
     font-size: 14px;
-
-    margin-top: 2px;   /* كان 6px */
+    margin-top: -12px;
     margin-bottom: 0px;
-
-    height: 34px;
+    height: 32px;
     display: flex;
     align-items: center;
     justify-content: center;
+}
+.stButton > button {
+    padding: 3px 8px !important;
+    min-height: 32px !important;
+    height: 32px !important;
+    font-size: 14px !important;
+    line-height: 1 !important;
+    border-radius: 8px !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -170,18 +178,11 @@ if page == "إدخال زيارة صفية":
         "زيارة القيادة الوسطى لجميع المعلمات"
     ]
 
-    judgements = [
-        "يتجاوز التوقعات بكثير",
-        "يتجاوز التوقعات",
-        "يفي بالتوقعات",
-        "يفي بالتوقعات جزئياً"
-    ]
-
     judgment_colors = {
-        "يتجاوز التوقعات بكثير": "#d9ead3",
-        "يتجاوز التوقعات": "#cfe2f3",
+        "يفي بالتوقعات جزئياً": "#ead1dc",
         "يفي بالتوقعات": "#fff2cc",
-        "يفي بالتوقعات جزئياً": "#ead1dc"
+        "يتجاوز التوقعات": "#cfe2f3",
+        "يتجاوز التوقعات بكثير": "#d9ead3"
     }
 
     months = [
@@ -274,10 +275,10 @@ if page == "إدخال زيارة صفية":
 
     st.markdown("""
     <div class="legend">
-        <div class="legend-box" style="background:#d9ead3;">يتجاوز التوقعات بكثير</div>
-        <div class="legend-box" style="background:#cfe2f3;">يتجاوز التوقعات</div>
-        <div class="legend-box" style="background:#fff2cc;">يفي بالتوقعات</div>
         <div class="legend-box" style="background:#ead1dc;">يفي بالتوقعات جزئياً</div>
+        <div class="legend-box" style="background:#fff2cc;">يفي بالتوقعات</div>
+        <div class="legend-box" style="background:#cfe2f3;">يتجاوز التوقعات</div>
+        <div class="legend-box" style="background:#d9ead3;">يتجاوز التوقعات بكثير</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -304,22 +305,24 @@ if page == "إدخال زيارة صفية":
                 b1, b2, b3, b4 = st.columns(4)
 
                 with b1:
-                    if st.button("كثير", key=f"btn_{item_number}_4"):
-                        st.session_state[choice_key] = "يتجاوز التوقعات بكثير"
-
-                with b2:
-                    if st.button("يتجاوز", key=f"btn_{item_number}_3"):
-                        st.session_state[choice_key] = "يتجاوز التوقعات"
-
-                with b3:
-                    if st.button("يفي", key=f"btn_{item_number}_2"):
-                        st.session_state[choice_key] = "يفي بالتوقعات"
-
-                with b4:
                     if st.button("جزئياً", key=f"btn_{item_number}_1"):
                         st.session_state[choice_key] = "يفي بالتوقعات جزئياً"
 
+                with b2:
+                    if st.button("يفي", key=f"btn_{item_number}_2"):
+                        st.session_state[choice_key] = "يفي بالتوقعات"
+
+                with b3:
+                    if st.button("يتجاوز", key=f"btn_{item_number}_3"):
+                        st.session_state[choice_key] = "يتجاوز التوقعات"
+
+                with b4:
+                    if st.button("كثير", key=f"btn_{item_number}_4"):
+                        st.session_state[choice_key] = "يتجاوز التوقعات بكثير"
+
                 selected_value = st.session_state[choice_key]
+
+                st.markdown("<div style='margin-top:-14px'></div>", unsafe_allow_html=True)
 
                 if selected_value:
                     st.markdown(

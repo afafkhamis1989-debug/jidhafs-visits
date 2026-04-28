@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import requests
-from datetime import date
 
 GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbziZ27mG690ZT02YN1LqbvWJLZ-rprnHK9qmXDDXcTvQVmnB-Phpm0J4DKjsg6Ts07xJQ/exec"
 HEADER_PATH = "header.png"
@@ -58,42 +57,36 @@ except:
 st.markdown('<div class="big-title">📊 نظام الزيارات الصفية</div>', unsafe_allow_html=True)
 
 # =======================
-# تحميل البيانات من Google Sheet
+# تحميل بيانات المعلمات من شيت Teachers
 # =======================
 @st.cache_data(ttl=60)
-def load_sheet_data():
-    response = requests.get(GOOGLE_SCRIPT_URL, timeout=20)
-    response.raise_for_status()
-    data = response.json()
+def load_teachers():
+    res = requests.get(GOOGLE_SCRIPT_URL, timeout=20)
+    res.raise_for_status()
+    return pd.DataFrame(res.json())
 
-    if isinstance(data, list):
-        return pd.DataFrame(data)
-
-    if isinstance(data, dict):
-        if "data" in data:
-            return pd.DataFrame(data["data"])
-        if "rows" in data:
-            return pd.DataFrame(data["rows"])
-        if "teachers" in data:
-            return pd.DataFrame(data["teachers"])
-
-    return pd.DataFrame()
 
 def send_to_google_sheet(row):
     payload = {
-        "sheet_name": "Responses",
+        "sheet_name": "Classroom_Visits",
         "row": row
     }
 
-    response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=20)
-    response.raise_for_status()
-    return response.json()
+    res = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=20)
+    res.raise_for_status()
+    return res.json()
 
-def clean_text(x):
-    return str(x).strip()
 
-def normalize_dept(x):
-    return str(x).strip().replace("أ", "ا").replace("إ", "ا").replace("آ", "ا")
+def normalize_text(x):
+    return (
+        str(x)
+        .strip()
+        .replace("أ", "ا")
+        .replace("إ", "ا")
+        .replace("آ", "ا")
+        .replace("ة", "ه")
+    )
+
 
 # =======================
 # صلاحيات الدخول
@@ -145,16 +138,15 @@ page = st.sidebar.radio(
 )
 
 # =======================
-# تحميل الشيت
+# تحميل بيانات المعلمات
 # =======================
 try:
-    df = pd.DataFrame()
+    teachers_df = load_teachers()
+    teachers_df.columns = [str(c).strip() for c in teachers_df.columns]
 except Exception as e:
-    st.error("حدث خطأ في تحميل البيانات من Google Sheet")
+    st.error("حدث خطأ في تحميل بيانات المعلمات من Google Sheet")
     st.write(e)
     st.stop()
-
-df.columns = [str(c).strip() for c in df.columns]
 
 # =======================
 # صفحة إدخال زيارة صفية
@@ -177,220 +169,124 @@ if page == "إدخال زيارة صفية":
         "يفي بالتوقعات جزئياً"
     ]
 
-    departments_static = [
-        "قسم اللغة الانجليزية",
-        "قسم اللغة العربية",
-        "قسم التربية الاسلامية",
-        "قسم الرياضيات",
-        "قسم العلوم",
-        "قسم المواد التجارية",
-        "قسم المواد الاجتماعية",
-        "قسم الحاسب الآلي",
-        "قسم التربية الاسرية",
-        "قسم التربية البدنية",
-        "قسم التربية الفنية"
+    months = [
+        "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر",
+        "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو"
     ]
 
     with st.form("visit_form"):
-        visitor_name = st.text_input("اسم الزائر")
-        visit_date = st.date_input("تاريخ الزيارة", value=date.today())
-        school_year = st.selectbox("السنة الدراسية", ["2025-2026", "2026-2027"])
-        semester = st.selectbox("الفصل الدراسي", ["الفصل الدراسي الأول", "الفصل الدراسي الثاني"])
-        visit_type = st.selectbox("نوع الزيارة", visitor_types)
+        school_year = st.selectbox(
+            "السنة الدراسية",
+            ["2025-2026", "2026-2027"]
+        )
+
+        semester = st.selectbox(
+            "الفصل الدراسي",
+            ["الفصل الدراسي الأول", "الفصل الدراسي الثاني"]
+        )
+
+        if "القسم الأكاديمي" not in teachers_df.columns or "اسم المعلمة" not in teachers_df.columns:
+            st.error("لازم يكون في شيت Teachers عمودين باسم: القسم الأكاديمي، اسم المعلمة")
+            st.stop()
+
+        departments = sorted(
+            teachers_df["القسم الأكاديمي"]
+            .dropna()
+            .astype(str)
+            .str.strip()
+            .unique()
+        )
 
         if allowed_dept == "الكل":
-            selected_dept = st.selectbox("القسم", departments_static)
+            selected_dept = st.selectbox("القسم الأكاديمي", departments)
         else:
             selected_dept = allowed_dept
             st.info(f"القسم: {selected_dept}")
 
-        if "القسم" in df.columns and "اسم المعلمة" in df.columns:
-            teachers = df[
-                df["القسم"].apply(normalize_dept) == normalize_dept(selected_dept)
-            ]["اسم المعلمة"].dropna().astype(str).str.strip().unique()
+        filtered_teachers = teachers_df[
+            teachers_df["القسم الأكاديمي"].apply(normalize_text)
+            == normalize_text(selected_dept)
+        ]["اسم المعلمة"].dropna().astype(str).str.strip().unique()
 
-            teachers = sorted([t for t in teachers if t and t != "nan"])
+        filtered_teachers = sorted([
+            name for name in filtered_teachers
+            if name and name.lower() != "nan"
+        ])
 
-            if teachers:
-                teacher_name = st.selectbox("اسم المعلمة", teachers)
-            else:
-                teacher_name = st.text_input("اسم المعلمة")
+        if filtered_teachers:
+            teacher_name = st.selectbox("اسم المعلمة", filtered_teachers)
         else:
             teacher_name = st.text_input("اسم المعلمة")
+
+        month = st.selectbox("الشهر", months)
+
+        visit_type = st.selectbox("نوع الزيارة", visitor_types)
 
         st.markdown("### بنود التقييم")
 
         answers = {}
         for i in range(1, 19):
-            answers[f"البند {i}"] = st.selectbox(
-                f"البند {i}",
+            answers[f"بند {i}"] = st.selectbox(
+                f"بند {i}",
                 judgements,
                 key=f"item_{i}"
             )
 
-        notes = st.text_area("ملاحظات")
+        strengths = st.text_area("نجاحات المعلم")
+        improvements = st.text_area("جوانب بحاجة إلى تطوير")
+
         submitted = st.form_submit_button("💾 حفظ الزيارة")
 
     if submitted:
-        if not visitor_name or not teacher_name:
-            st.error("الرجاء إدخال اسم الزائر واسم المعلمة")
-        else:
-            row = {
-                "تاريخ الزيارة": str(visit_date),
-                "السنة الدراسية": school_year,
-                "الفصل الدراسي": semester,
-                "اسم الزائر": visitor_name,
-                "نوع الزيارة": visit_type,
-                "القسم": selected_dept,
-                "اسم المعلمة": teacher_name,
-                "ملاحظات": notes
-            }
+        row = {
+            "السنة الدراسية": school_year,
+            "الفصل الدراسي": semester,
+            "القسم الأكاديمي": selected_dept,
+            "اسم المعلمة": teacher_name,
+            "الزائر": "",
+            "الشهر": month,
+            "نوع الزيارة": visit_type,
+            "بند 1": answers["بند 1"],
+            "بند 2": answers["بند 2"],
+            "بند 3": answers["بند 3"],
+            "بند 4": answers["بند 4"],
+            "بند 5": answers["بند 5"],
+            "بند 6": answers["بند 6"],
+            "بند 7": answers["بند 7"],
+            "بند 8": answers["بند 8"],
+            "بند 9": answers["بند 9"],
+            "بند 10": answers["بند 10"],
+            "بند 11": answers["بند 11"],
+            "بند 12": answers["بند 12"],
+            "بند 13": answers["بند 13"],
+            "بند 14": answers["بند 14"],
+            "بند 15": answers["بند 15"],
+            "بند 16": answers["بند 16"],
+            "بند 17": answers["بند 17"],
+            "بند 18": answers["بند 18"],
+            "نجاحات المعلم": strengths,
+            "جوانب بحاجة إلى تطوير": improvements
+        }
 
-            row.update(answers)
-
-            try:
-                result = send_to_google_sheet(row)
-                st.cache_data.clear()
-                st.success("تم حفظ الزيارة بنجاح ✅")
-                st.write(result)
-            except Exception as e:
-                st.error("حدث خطأ أثناء الإرسال")
-                st.write(e)
+        try:
+            result = send_to_google_sheet(row)
+            st.cache_data.clear()
+            st.success("تم حفظ الزيارة بنجاح ✅")
+            st.write(result)
+        except Exception as e:
+            st.error("حدث خطأ أثناء الإرسال")
+            st.write(e)
 
 # =======================
-# صفحة التحليل
+# لوحة التحليل مؤقتًا
 # =======================
 else:
     st.markdown("## 📊 لوحة التحليل")
 
-    if df.empty:
-        st.warning("لا توجد بيانات في الشيت حتى الآن")
-        st.stop()
+    st.info("لوحة التحليل سيتم ربطها ببيانات Classroom_Visits بعد التأكد من عمل الاستمارة والإرسال.")
 
-    needed_cols = ["القسم", "اسم المعلمة"]
-    for col in needed_cols:
-        if col not in df.columns:
-            st.error(f"العمود غير موجود في الشيت: {col}")
-            st.write("الأعمدة الموجودة:", df.columns.tolist())
-            st.stop()
-
-    for col in df.columns:
-        df[col] = df[col].astype(str).str.strip()
-
-    filtered = df.copy()
-
-    if allowed_dept != "الكل":
-        filtered = filtered[
-            filtered["القسم"].apply(normalize_dept) == normalize_dept(allowed_dept)
-        ]
-        st.sidebar.success(f"القسم: {allowed_dept}")
-
-    st.sidebar.markdown("## 🎯 الفلاتر")
-
-    if "السنة الدراسية" in filtered.columns:
-        years = sorted(filtered["السنة الدراسية"].dropna().unique())
-        selected_year = st.sidebar.selectbox("السنة الدراسية", ["الكل"] + years)
-        if selected_year != "الكل":
-            filtered = filtered[filtered["السنة الدراسية"] == selected_year]
-
-    if "الفصل الدراسي" in filtered.columns:
-        terms = sorted(filtered["الفصل الدراسي"].dropna().unique())
-        selected_term = st.sidebar.selectbox("الفصل الدراسي", ["الكل"] + terms)
-        if selected_term != "الكل":
-            filtered = filtered[filtered["الفصل الدراسي"] == selected_term]
-
-    if allowed_dept == "الكل":
-        depts = sorted(filtered["القسم"].dropna().unique())
-        selected_dept_filter = st.sidebar.selectbox("القسم", ["الكل"] + depts)
-        if selected_dept_filter != "الكل":
-            filtered = filtered[filtered["القسم"] == selected_dept_filter]
-
-    teachers = sorted(filtered["اسم المعلمة"].dropna().unique())
-    selected_teacher_filter = st.sidebar.selectbox("اسم المعلمة", ["الكل"] + teachers)
-    if selected_teacher_filter != "الكل":
-        filtered = filtered[filtered["اسم المعلمة"] == selected_teacher_filter]
-
-    if "نوع الزيارة" in filtered.columns:
-        visits = sorted(filtered["نوع الزيارة"].dropna().unique())
-        selected_visit_filter = st.sidebar.selectbox("نوع الزيارة", ["الكل"] + visits)
-        if selected_visit_filter != "الكل":
-            filtered = filtered[filtered["نوع الزيارة"] == selected_visit_filter]
-
-    c1, c2, c3 = st.columns(3)
-
-    with c1:
-        st.markdown(f"""
-        <div class="card">
-            <div class="card-title">عدد الزيارات</div>
-            <div class="card-value">{len(filtered)}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with c2:
-        st.markdown(f"""
-        <div class="card">
-            <div class="card-title">عدد المعلمات</div>
-            <div class="card-value">{filtered["اسم المعلمة"].nunique()}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with c3:
-        st.markdown(f"""
-        <div class="card">
-            <div class="card-title">عدد الأقسام</div>
-            <div class="card-value">{filtered["القسم"].nunique()}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    st.markdown('<div class="section-title">📋 البيانات</div>', unsafe_allow_html=True)
-    st.dataframe(filtered, use_container_width=True)
-
-    item_cols = [f"البند {i}" for i in range(1, 19) if f"البند {i}" in filtered.columns]
-
-    if item_cols:
-        st.markdown('<div class="section-title">📊 تحليل البنود</div>', unsafe_allow_html=True)
-
-        rows = []
-        for item in item_cols:
-            counts = filtered[item].value_counts()
-            for judgment, count in counts.items():
-                rows.append({
-                    "البند": item,
-                    "الحكم": judgment,
-                    "العدد": count
-                })
-
-        item_df = pd.DataFrame(rows)
-
-        fig = px.bar(
-            item_df,
-            x="العدد",
-            y="البند",
-            color="الحكم",
-            orientation="h",
-            barmode="stack",
-            title="توزيع الأحكام حسب البنود"
-        )
-
-        fig.update_layout(height=700, title_x=0.5)
-        st.plotly_chart(fig, use_container_width=True)
-
-    if "القسم" in filtered.columns:
-        st.markdown('<div class="section-title">📊 عدد الزيارات حسب القسم</div>', unsafe_allow_html=True)
-
-        dept_count = filtered["القسم"].value_counts().reset_index()
-        dept_count.columns = ["القسم", "عدد الزيارات"]
-
-        fig_dept = px.bar(
-            dept_count,
-            x="القسم",
-            y="عدد الزيارات",
-            text="عدد الزيارات",
-            title="عدد الزيارات حسب القسم"
-        )
-
-        fig_dept.update_layout(title_x=0.5)
-        st.plotly_chart(fig_dept, use_container_width=True)
+    st.markdown("### 👩‍🏫 بيانات المعلمات من شيت Teachers")
+    st.dataframe(teachers_df, use_container_width=True)
 
 # =======================
 # الفوتر

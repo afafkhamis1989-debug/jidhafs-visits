@@ -338,7 +338,7 @@ if page == "إدخال زيارة صفية":
                 "الفصل الدراسي": semester,
                 "القسم الأكاديمي": selected_dept,
                 "اسم المعلمة": teacher_name,
-                "الزائر": "",
+                "الزائر": visit_type,
                 "الشهر": month,
                 "نوع الزيارة": visit_type,
                 "بند 1": answers["بند 1"],

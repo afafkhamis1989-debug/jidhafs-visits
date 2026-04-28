@@ -274,12 +274,30 @@ if page == "إدخال زيارة صفية":
                     )
 
                 with col_choice:
-                    answers[f"بند {item_number}"] = st.selectbox(
-                        "",
-                        judgements,
-                        key=f"item_{item_number}",
-                        label_visibility="collapsed"
-                    )
+                    choice_key = f"item_{item_number}"
+
+                    if choice_key not in st.session_state:
+                        st.session_state[choice_key] = None
+
+                    col1, col2, col3, col4 = st.columns(4)
+
+                    with col1:
+                         if st.button("🟢", key=f"{choice_key}_1"):
+                             st.session_state[choice_key] = "يتجاوز التوقعات بكثير"
+
+                    with col2:
+                        if st.button("🔵", key=f"{choice_key}_2"):
+                            st.session_state[choice_key] = "يتجاوز التوقعات"
+
+                    with col3:
+                        if st.button("🟡", key=f"{choice_key}_3"):
+                             st.session_state[choice_key] = "يفي بالتوقعات"
+
+                    with col4:
+                        if st.button("🔴", key=f"{choice_key}_4"):
+                            st.session_state[choice_key] = "يفي بالتوقعات جزئياً"
+
+                    answers[f"بند {item_number}"] = st.session_state[choice_key]
 
         strengths = st.text_area("نجاحات المعلم")
         improvements = st.text_area("جوانب بحاجة إلى تطوير")

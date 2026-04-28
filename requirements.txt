@@ -5,3 +5,4 @@ xlsxwriter
 plotly
 gspread
 google-auth
+requests

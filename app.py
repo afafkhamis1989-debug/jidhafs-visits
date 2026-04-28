@@ -8,6 +8,21 @@ from difflib import SequenceMatcher
 from io import BytesIO
 import gspread
 from google.oauth2.service_account import Credentials
+import requests
+GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbziZ27mG690ZT02YN1LqbvWJLZ-rprnHK9qmXDDXcTvQVmnB-Phpm0J4DKjsg6Ts07xJQ/exec"
+
+def send_to_google_sheet(sheet_name, row):
+    payload = {
+        "sheet_name": sheet_name,
+        "row": row
+    }
+
+    response = requests.post(GOOGLE_SCRIPT_URL, json=payload)
+
+    if response.status_code == 200:
+        return response.json()
+    else:
+        return {"status": "error", "message": response.text}
 
 HEADER_PATH = "header.png"
 TEMPLATE1_PATH = "templates.xlsx"

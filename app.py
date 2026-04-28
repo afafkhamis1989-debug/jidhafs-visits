@@ -253,7 +253,7 @@ if page == "إدخال زيارة صفية":
                 key=f"item_{item_number}",
                 label_visibility="collapsed"
                 )
-)
+
 
         strengths = st.text_area("نجاحات المعلم")
         improvements = st.text_area("جوانب بحاجة إلى تطوير")

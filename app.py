@@ -245,7 +245,10 @@ if page == "إدخال زيارة صفية":
 
         visit_type = st.selectbox("نوع الزيارة", visitor_types)
 
-        st.markdown("### بنود التقييم")
+        st.markdown(
+    '   <h2 style="text-align:center;">بنود التقييم</h2>',
+        unsafe_allow_html=True
+)
 
         st.markdown("""
         <div class="legend">

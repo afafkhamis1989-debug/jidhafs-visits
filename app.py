@@ -54,6 +54,14 @@ st.markdown("""
     font-weight: 800;
     border: 1px solid #999;
 }
+.selected-answer {
+    text-align: center;
+    font-weight: 900;
+    padding: 8px;
+    border-radius: 10px;
+    margin-top: 6px;
+    border: 1px solid #999;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -161,6 +169,13 @@ if page == "إدخال زيارة صفية":
         "يفي بالتوقعات جزئياً"
     ]
 
+    judgment_colors = {
+        "يتجاوز التوقعات بكثير": "#d9ead3",
+        "يتجاوز التوقعات": "#cfe2f3",
+        "يفي بالتوقعات": "#fff2cc",
+        "يفي بالتوقعات جزئياً": "#ead1dc"
+    }
+
     months = [
         "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر",
         "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو"
@@ -230,119 +245,148 @@ if page == "إدخال زيارة صفية":
     else:
         teacher_name = st.text_input("اسم المعلمة")
 
-    with st.form("visit_form"):
-        school_year = st.selectbox(
-            "السنة الدراسية",
-            ["2024-2025", "2025-2026", "2026-2027"]
-        )
+    school_year = st.selectbox(
+        "السنة الدراسية",
+        ["2024-2025", "2025-2026", "2026-2027"]
+    )
 
-        semester = st.selectbox(
-            "الفصل الدراسي",
-            ["الفصل الدراسي الأول", "الفصل الدراسي الثاني"]
-        )
+    semester = st.selectbox(
+        "الفصل الدراسي",
+        ["الفصل الدراسي الأول", "الفصل الدراسي الثاني"]
+    )
 
-        month = st.selectbox("الشهر", months)
+    month = st.selectbox("الشهر", months)
 
-        visit_type = st.selectbox("نوع الزيارة", visitor_types)
+    visit_type = st.selectbox("نوع الزيارة", visitor_types)
 
-        st.markdown(
-    '   <h2 style="text-align:center;">بنود التقييم</h2>',
+    st.markdown(
+        '<div style="text-align:center; font-size:30px; font-weight:900; margin-top:25px;">بنود التقييم</div>',
         unsafe_allow_html=True
-)
+    )
 
-        st.markdown("""
-        <div class="legend">
-            <div class="legend-box" style="background:#d9ead3;">يتجاوز التوقعات بكثير</div>
-            <div class="legend-box" style="background:#cfe2f3;">يتجاوز التوقعات</div>
-            <div class="legend-box" style="background:#fff2cc;">يفي بالتوقعات</div>
-            <div class="legend-box" style="background:#ead1dc;">يفي بالتوقعات جزئياً</div>
-        </div>
-        """, unsafe_allow_html=True)
+    st.markdown("""
+    <div class="legend">
+        <div class="legend-box" style="background:#d9ead3;">يتجاوز التوقعات بكثير</div>
+        <div class="legend-box" style="background:#cfe2f3;">يتجاوز التوقعات</div>
+        <div class="legend-box" style="background:#fff2cc;">يفي بالتوقعات</div>
+        <div class="legend-box" style="background:#ead1dc;">يفي بالتوقعات جزئياً</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-        answers = {}
+    answers = {}
 
-        for domain, items in items_structure.items():
-            st.markdown(f'<div class="domain-title">{domain}</div>', unsafe_allow_html=True)
+    for domain, items in items_structure.items():
+        st.markdown(f'<div class="domain-title">{domain}</div>', unsafe_allow_html=True)
 
-            for item_number, item_text in items:
-                col_text, col_choice = st.columns([4, 1.4])
+        for item_number, item_text in items:
+            choice_key = f"answer_{item_number}"
 
-                with col_text:
+            if choice_key not in st.session_state:
+                st.session_state[choice_key] = ""
+
+            col_text, col_buttons = st.columns([3.5, 2])
+
+            with col_text:
+                st.markdown(
+                    f'<div class="item-box"><b>{item_number}.</b> {item_text}</div>',
+                    unsafe_allow_html=True
+                )
+
+            with col_buttons:
+                b1, b2, b3, b4 = st.columns(4)
+
+                with b1:
+                    if st.button("كثير", key=f"btn_{item_number}_4"):
+                        st.session_state[choice_key] = "يتجاوز التوقعات بكثير"
+
+                with b2:
+                    if st.button("يتجاوز", key=f"btn_{item_number}_3"):
+                        st.session_state[choice_key] = "يتجاوز التوقعات"
+
+                with b3:
+                    if st.button("يفي", key=f"btn_{item_number}_2"):
+                        st.session_state[choice_key] = "يفي بالتوقعات"
+
+                with b4:
+                    if st.button("جزئياً", key=f"btn_{item_number}_1"):
+                        st.session_state[choice_key] = "يفي بالتوقعات جزئياً"
+
+                selected_value = st.session_state[choice_key]
+
+                if selected_value:
                     st.markdown(
-                        f'<div class="item-box"><b>{item_number}.</b> {item_text}</div>',
+                        f"""
+                        <div class="selected-answer" style="background:{judgment_colors[selected_value]};">
+                            {selected_value}
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+                else:
+                    st.markdown(
+                        """
+                        <div class="selected-answer" style="background:#f3f4f6;">
+                            لم يتم الاختيار
+                        </div>
+                        """,
                         unsafe_allow_html=True
                     )
 
-                with col_choice:
-                    choice_key = f"item_{item_number}"
+            answers[f"بند {item_number}"] = st.session_state[choice_key]
 
-                    if choice_key not in st.session_state:
-                        st.session_state[choice_key] = None
+    strengths = st.text_area("نجاحات المعلم")
+    improvements = st.text_area("جوانب بحاجة إلى تطوير")
 
-                    col1, col2, col3, col4 = st.columns(4)
+    if st.button("💾 حفظ الزيارة"):
+        missing_items = [
+            item for item in range(1, 19)
+            if not answers[f"بند {item}"]
+        ]
 
-                    with col1:
-                         if st.button("🟢", key=f"{choice_key}_1"):
-                             st.session_state[choice_key] = "يتجاوز التوقعات بكثير"
+        if missing_items:
+            st.error("الرجاء اختيار حكم لجميع البنود قبل الحفظ")
+        else:
+            row = {
+                "السنة الدراسية": school_year,
+                "الفصل الدراسي": semester,
+                "القسم الأكاديمي": selected_dept,
+                "اسم المعلمة": teacher_name,
+                "الزائر": "",
+                "الشهر": month,
+                "نوع الزيارة": visit_type,
+                "بند 1": answers["بند 1"],
+                "بند 2": answers["بند 2"],
+                "بند 3": answers["بند 3"],
+                "بند 4": answers["بند 4"],
+                "بند 5": answers["بند 5"],
+                "بند 6": answers["بند 6"],
+                "بند 7": answers["بند 7"],
+                "بند 8": answers["بند 8"],
+                "بند 9": answers["بند 9"],
+                "بند 10": answers["بند 10"],
+                "بند 11": answers["بند 11"],
+                "بند 12": answers["بند 12"],
+                "بند 13": answers["بند 13"],
+                "بند 14": answers["بند 14"],
+                "بند 15": answers["بند 15"],
+                "بند 16": answers["بند 16"],
+                "بند 17": answers["بند 17"],
+                "بند 18": answers["بند 18"],
+                "نجاحات المعلم": strengths,
+                "جوانب بحاجة إلى تطوير": improvements
+            }
 
-                    with col2:
-                        if st.button("🔵", key=f"{choice_key}_2"):
-                            st.session_state[choice_key] = "يتجاوز التوقعات"
+            try:
+                result = send_to_google_sheet(row)
+                st.success("تم حفظ الزيارة بنجاح ✅")
+                st.write(result)
 
-                    with col3:
-                        if st.button("🟡", key=f"{choice_key}_3"):
-                             st.session_state[choice_key] = "يفي بالتوقعات"
+                for i in range(1, 19):
+                    st.session_state[f"answer_{i}"] = ""
 
-                    with col4:
-                        if st.button("🔴", key=f"{choice_key}_4"):
-                            st.session_state[choice_key] = "يفي بالتوقعات جزئياً"
-
-                    answers[f"بند {item_number}"] = st.session_state[choice_key]
-
-        strengths = st.text_area("نجاحات المعلم")
-        improvements = st.text_area("جوانب بحاجة إلى تطوير")
-
-        submitted = st.form_submit_button("💾 حفظ الزيارة")
-
-    if submitted:
-        row = {
-            "السنة الدراسية": school_year,
-            "الفصل الدراسي": semester,
-            "القسم الأكاديمي": selected_dept,
-            "اسم المعلمة": teacher_name,
-            "الزائر": "",
-            "الشهر": month,
-            "نوع الزيارة": visit_type,
-            "بند 1": answers["بند 1"],
-            "بند 2": answers["بند 2"],
-            "بند 3": answers["بند 3"],
-            "بند 4": answers["بند 4"],
-            "بند 5": answers["بند 5"],
-            "بند 6": answers["بند 6"],
-            "بند 7": answers["بند 7"],
-            "بند 8": answers["بند 8"],
-            "بند 9": answers["بند 9"],
-            "بند 10": answers["بند 10"],
-            "بند 11": answers["بند 11"],
-            "بند 12": answers["بند 12"],
-            "بند 13": answers["بند 13"],
-            "بند 14": answers["بند 14"],
-            "بند 15": answers["بند 15"],
-            "بند 16": answers["بند 16"],
-            "بند 17": answers["بند 17"],
-            "بند 18": answers["بند 18"],
-            "نجاحات المعلم": strengths,
-            "جوانب بحاجة إلى تطوير": improvements
-        }
-
-        try:
-            result = send_to_google_sheet(row)
-            st.cache_data.clear()
-            st.success("تم حفظ الزيارة بنجاح ✅")
-            st.write(result)
-        except Exception as e:
-            st.error("حدث خطأ أثناء الإرسال")
-            st.write(e)
+            except Exception as e:
+                st.error("حدث خطأ أثناء الإرسال")
+                st.write(e)
 
 else:
     st.markdown("## 📊 لوحة التحليل")

@@ -340,8 +340,53 @@ def get_sheet_data(sheet_name):
     return pd.DataFrame(res.json())
 
 
+SHEET_HEADERS = [
+    "السنة الدراسية", "الفصل الدراسي", "القسم الأكاديمي", "اسم المعلمة",
+    "الزائر", "الشهر", "نوع الزيارة",
+    *[f"بند {i}" for i in range(1, 19)],
+    "نوع السجل",
+    "نجاحات المعلم", "جوانب بحاجة إلى تطوير",
+    "نقاط القوة في أدائي العام", "نقاط الضعف التي تحتاج إلى تطوير",
+    "الدعم المطلوب من زيارات القيادة الوسطى", "مقترحاتي لتطوير أدائي",
+    "المعلم الزائر", "القسم الأكاديمي للمعلم الزائر",
+    "اسم المدرسة للمعلم الزائر", "اسم المدرسة للمعلم المزور",
+    "الأهداف التعليمية للحصة", "أساليب واستراتيجيات التدريس الملحوظة",
+    "ما الذي يمكن أن أستفيد منه لتطوير ممارساتي التدريسية",
+    "أفكار جديدة يمكن أن أستفيد منها لتطوير ممارساتي التدريسية",
+    "توصيات المعلم المزور",
+]
+
+
+def setup_sheet_headers():
+    """ترسل رؤوس الأعمدة لـ Google Sheet إذا الصف الأول فارغ"""
+    try:
+        payload = {
+            "sheet_name": "Classroom_Visits",
+            "action": "setup_headers",
+            "headers": SHEET_HEADERS
+        }
+        requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=15)
+    except Exception:
+        pass
+
+
 def send_to_google_sheet(row):
-    res = requests.post(GOOGLE_SCRIPT_URL, json={"sheet_name":"Classroom_Visits","row":row}, timeout=25)
+    """
+    ترتيب الأعمدة مطابق تماماً لرؤوس Google Sheet:
+    السنة الدراسية | الفصل الدراسي | القسم الأكاديمي | اسم المعلمة | الزائر | الشهر | نوع الزيارة |
+    بند 1..18 | نوع السجل | نجاحات المعلم | جوانب بحاجة إلى تطوير |
+    نقاط القوة في أدائي العام | نقاط الضعف التي تحتاج إلى تطوير |
+    الدعم المطلوب من زيارات القيادة الوسطى | مقترحاتي لتطوير أدائي |
+    المعلم الزائر | القسم الأكاديمي للمعلم الزائر | اسم المدرسة للمعلم الزائر |
+    اسم المدرسة للمعلم المزور | الأهداف التعليمية للحصة |
+    أساليب واستراتيجيات التدريس الملحوظة |
+    ما الذي يمكن أن أستفيد منه لتطوير ممارساتي التدريسية |
+    أفكار جديدة يمكن أن أستفيد منها لتطوير ممارساتي التدريسية |
+    توصيات المعلم المزور
+    """
+    ordered_row = [row.get(col, "") for col in SHEET_HEADERS]
+    payload = {"sheet_name": "Classroom_Visits", "row": ordered_row}
+    res = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=25)
     res.raise_for_status()
     return res.json()
 
@@ -830,9 +875,14 @@ def show_form(teachers_df, allowed_dept):
     if st.button("💾  حفظ السجل"):
         record_type = ("تقييم ذاتي" if is_self else "توأمة موجهة" if is_peer else "زيارة صفية")
         row = {
-            "نوع السجل": record_type, "السنة الدراسية": school_year,
-            "الفصل الدراسي": semester, "القسم الأكاديمي": selected_dept,
-            "اسم المعلمة": teacher_name, "الزائر": visit_type, "الشهر": month,
+            "نوع السجل": record_type,
+            "السنة الدراسية": school_year,
+            "الفصل الدراسي": semester,
+            "القسم الأكاديمي": selected_dept,
+            "اسم المعلمة": teacher_name,
+            "الزائر": visit_type,
+            "نوع الزيارة": visit_type,
+            "الشهر": month,
             **{f"بند {i}": answers[f"بند {i}"] for i in range(1,19)},
             "نجاحات المعلم": strengths if not is_self else "",
             "جوانب بحاجة إلى تطوير": improvements,
@@ -899,6 +949,14 @@ st.sidebar.markdown("---")
 if st.sidebar.button("🚪 تسجيل الخروج"):
     st.session_state.update({"logged_in": False, "allowed_dept": None})
     st.rerun()
+
+# زر إعداد أعمدة الشيت — للمدير فقط
+if allowed_dept == "الكل":
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("<div style='color:#7eb3f7; font-size:13px; font-weight:700'>⚙️ أدوات المدير</div>", unsafe_allow_html=True)
+    if st.sidebar.button("🔧 إعداد أعمدة Google Sheet"):
+        setup_sheet_headers()
+        st.sidebar.success("✅ تم إرسال الأعمدة!")
 
 # Page Header
 page_titles = {

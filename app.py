@@ -342,9 +342,8 @@ def get_sheet_data(sheet_name):
 
 SHEET_HEADERS = [
     "السنة الدراسية", "الفصل الدراسي", "القسم الأكاديمي", "اسم المعلمة",
-    "الزائر", "الشهر", "نوع الزيارة",
+    "الزائر", "الشهر",
     *[f"بند {i}" for i in range(1, 19)],
-    "نوع السجل",
     "نجاحات المعلم", "جوانب بحاجة إلى تطوير",
     "نقاط القوة في أدائي العام", "نقاط الضعف التي تحتاج إلى تطوير",
     "الدعم المطلوب من زيارات القيادة الوسطى", "مقترحاتي لتطوير أدائي",
@@ -373,7 +372,7 @@ def setup_sheet_headers():
 def send_to_google_sheet(row):
     """
     ترتيب الأعمدة مطابق تماماً لرؤوس Google Sheet:
-    السنة الدراسية | الفصل الدراسي | القسم الأكاديمي | اسم المعلمة | الزائر | الشهر | نوع الزيارة |
+    السنة الدراسية | الفصل الدراسي | القسم الأكاديمي | اسم المعلمة | الزائر | الشهر |
     بند 1..18 | نوع السجل | نجاحات المعلم | جوانب بحاجة إلى تطوير |
     نقاط القوة في أدائي العام | نقاط الضعف التي تحتاج إلى تطوير |
     الدعم المطلوب من زيارات القيادة الوسطى | مقترحاتي لتطوير أدائي |
@@ -384,8 +383,7 @@ def send_to_google_sheet(row):
     أفكار جديدة يمكن أن أستفيد منها لتطوير ممارساتي التدريسية |
     توصيات المعلم المزور
     """
-    ordered_row = [row.get(col, "") for col in SHEET_HEADERS]
-    payload = {"sheet_name": "Classroom_Visits", "row": ordered_row}
+    payload = {"sheet_name": "Classroom_Visits", "row": row}
     res = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=25)
     res.raise_for_status()
     return res.json()
@@ -872,21 +870,24 @@ def show_form(teachers_df, allowed_dept):
 
     # ── Save ─────────────────────────────────────────────────────────────────
     st.markdown("<br>", unsafe_allow_html=True)
-    # رسالة النجاح تظهر إذا كان في حفظ سابق
+
+    # رسالة النجاح مع زر تسجيل جديد
     if st.session_state.get("save_success"):
-        st.success("✅ تم حفظ السجل بنجاح! يمكنك إدخال زيارة جديدة.")
-        st.session_state["save_success"] = False
+        st.success("✅ تم حفظ السجل بنجاح!")
+        if st.button("🔄 تسجيل زيارة جديدة"):
+            st.session_state["save_success"] = False
+            st.session_state["cache_needs_clear"] = True
+            st.rerun()
+        return
 
     if st.button("💾  حفظ السجل"):
         record_type = ("تقييم ذاتي" if is_self else "توأمة موجهة" if is_peer else "زيارة صفية")
         row = {
-            "نوع السجل": record_type,
             "السنة الدراسية": school_year,
             "الفصل الدراسي": semester,
             "القسم الأكاديمي": selected_dept,
             "اسم المعلمة": teacher_name,
             "الزائر": visit_type,
-            "نوع الزيارة": visit_type,
             "الشهر": month,
             **{f"بند {i}": answers[f"بند {i}"] for i in range(1,19)},
             "نجاحات المعلم": strengths if not is_self else "",
@@ -907,14 +908,11 @@ def show_form(teachers_df, allowed_dept):
         }
         try:
             with st.spinner("⏳ جارٍ الحفظ..."):
-                send_to_google_sheet(row)
-            # نمسح الكاش بعد تأخير بسيط حتى تظهر البيانات الجديدة عند الانتقال للتحليل
+                result = send_to_google_sheet(row)
             st.session_state["save_success"] = True
-            st.session_state["cache_needs_clear"] = True
             st.rerun()
         except Exception as e:
-            st.error("❌ حدث خطأ أثناء الحفظ")
-            st.write(e)
+            st.error(f"❌ حدث خطأ أثناء الحفظ: {str(e)}")
 
 
 # ─── Auth ─────────────────────────────────────────────────────────────────────

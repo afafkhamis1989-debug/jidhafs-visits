@@ -872,6 +872,11 @@ def show_form(teachers_df, allowed_dept):
 
     # ── Save ─────────────────────────────────────────────────────────────────
     st.markdown("<br>", unsafe_allow_html=True)
+    # رسالة النجاح تظهر إذا كان في حفظ سابق
+    if st.session_state.get("save_success"):
+        st.success("✅ تم حفظ السجل بنجاح! يمكنك إدخال زيارة جديدة.")
+        st.session_state["save_success"] = False
+
     if st.button("💾  حفظ السجل"):
         record_type = ("تقييم ذاتي" if is_self else "توأمة موجهة" if is_peer else "زيارة صفية")
         row = {
@@ -901,9 +906,12 @@ def show_form(teachers_df, allowed_dept):
             "توصيات المعلم المزور": recommendations,
         }
         try:
-            send_to_google_sheet(row)
-            st.cache_data.clear()
-            st.success("✅ تم حفظ السجل بنجاح!")
+            with st.spinner("⏳ جارٍ الحفظ..."):
+                send_to_google_sheet(row)
+            # نمسح الكاش بعد تأخير بسيط حتى تظهر البيانات الجديدة عند الانتقال للتحليل
+            st.session_state["save_success"] = True
+            st.session_state["cache_needs_clear"] = True
+            st.rerun()
         except Exception as e:
             st.error("❌ حدث خطأ أثناء الحفظ")
             st.write(e)
@@ -966,6 +974,10 @@ page_titles = {
 ptitle, psub = page_titles.get(page, ("", ""))
 
 if page == "📊 لوحة التحليل":
+    # امسح الكاش إذا كان في حفظ جديد
+    if st.session_state.get("cache_needs_clear"):
+        st.cache_data.clear()
+        st.session_state["cache_needs_clear"] = False
     st.markdown(f"""
     <div class="page-header">
         <div>

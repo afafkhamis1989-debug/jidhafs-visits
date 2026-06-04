@@ -884,7 +884,8 @@ def show_form(teachers_df, allowed_dept):
             st.rerun()
         return
 
-    if st.button("💾  حفظ السجل"):
+    if st.button("💾  حفظ السجل", disabled=st.session_state.get("saving", False)):
+        st.session_state["saving"] = True
         record_type = ("تقييم ذاتي" if is_self else "توأمة موجهة" if is_peer else "زيارة صفية")
         row = {
             "السنة الدراسية": school_year,
@@ -912,10 +913,12 @@ def show_form(teachers_df, allowed_dept):
         }
         try:
             with st.spinner("⏳ جارٍ الحفظ..."):
-                result = send_to_google_sheet(row)
+                send_to_google_sheet(row)
+            st.session_state["saving"] = False
             st.session_state["save_success"] = True
             st.rerun()
         except Exception as e:
+            st.session_state["saving"] = False
             st.error(f"❌ حدث خطأ أثناء الحفظ: {str(e)}")
 
 

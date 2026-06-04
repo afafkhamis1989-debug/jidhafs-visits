@@ -3,6 +3,7 @@ import pandas as pd
 import requests
 import plotly.express as px
 import plotly.graph_objects as go
+import uuid
 
 GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbziZ27mG690ZT02YN1LqbvWJLZ-rprnHK9qmXDDXcTvQVmnB-Phpm0J4DKjsg6Ts07xJQ/exec"
 HEADER_PATH = "header.png"
@@ -884,10 +885,39 @@ def show_form(teachers_df, allowed_dept):
             st.rerun()
         return
 
-    if st.button("💾  حفظ السجل", disabled=st.session_state.get("saving", False)):
+    if st.session_state.get("saving", False):
+        st.info("⏳ جارٍ الحفظ... الرجاء الانتظار")
+        return
+
+    if st.button("💾  حفظ السجل"):
+        # ── تحقق من التكرار قبل الحفظ ──────────────────────────────────────
+        try:
+            existing_df = get_sheet_data("Classroom_Visits")
+            existing_df.columns = [str(c).strip() for c in existing_df.columns]
+            
+            duplicate = existing_df[
+                (existing_df.get("اسم المعلمة", pd.Series(dtype=str)).astype(str) == teacher_name) &
+                (existing_df.get("الزائر", pd.Series(dtype=str)).astype(str) == visit_type) &
+                (existing_df.get("الشهر", pd.Series(dtype=str)).astype(str) == month) &
+                (existing_df.get("السنة الدراسية", pd.Series(dtype=str)).astype(str) == school_year) &
+                (existing_df.get("الفصل الدراسي", pd.Series(dtype=str)).astype(str) == semester)
+            ]
+            
+            if not duplicate.empty:
+                st.error(f"⚠️ تم تسجيل هذه الزيارة مسبقاً! المعلمة **{teacher_name}** لديها سجل لـ **{visit_type}** في شهر **{month}**.")
+                return
+        except Exception:
+            pass  # إذا ما قدر يتحقق يكمل الحفظ
+        
         st.session_state["saving"] = True
         record_type = ("تقييم ذاتي" if is_self else "توأمة موجهة" if is_peer else "زيارة صفية")
+        
+        # ID فريد لكل عملية حفظ — يمنع التكرار حتى لو ضُغط الزر مرتين
+        if "current_submission_id" not in st.session_state:
+            st.session_state["current_submission_id"] = str(uuid.uuid4())
+        
         row = {
+            "submission_id": st.session_state["current_submission_id"],
             "السنة الدراسية": school_year,
             "الفصل الدراسي": semester,
             "القسم الأكاديمي": selected_dept,
@@ -916,6 +946,8 @@ def show_form(teachers_df, allowed_dept):
                 send_to_google_sheet(row)
             st.session_state["saving"] = False
             st.session_state["save_success"] = True
+            # امسح الـ ID حتى لو أعيد الإرسال يكون ID جديد
+            st.session_state.pop("current_submission_id", None)
             st.rerun()
         except Exception as e:
             st.session_state["saving"] = False

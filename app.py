@@ -875,7 +875,11 @@ def show_form(teachers_df, allowed_dept):
     if st.session_state.get("save_success"):
         st.success("✅ تم حفظ السجل بنجاح!")
         if st.button("🔄 تسجيل زيارة جديدة"):
-            st.session_state["save_success"] = False
+            # امسح كل قيم البنود والفورم من session_state
+            keys_to_delete = [k for k in st.session_state.keys() 
+                              if k.startswith("item_") or k == "save_success"]
+            for k in keys_to_delete:
+                del st.session_state[k]
             st.session_state["cache_needs_clear"] = True
             st.rerun()
         return

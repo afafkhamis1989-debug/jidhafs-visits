@@ -2,11 +2,16 @@ import streamlit as st
 import pandas as pd
 import requests
 import plotly.express as px
+import plotly.graph_objects as go
 
 GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbziZ27mG690ZT02YN1LqbvWJLZ-rprnHK9qmXDDXcTvQVmnB-Phpm0J4DKjsg6Ts07xJQ/exec"
 HEADER_PATH = "header.png"
 
-st.set_page_config(page_title="نظام الزيارات الصفية", layout="wide")
+st.set_page_config(
+    page_title="نظام الزيارات الصفية",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
 JUDGMENT_WEIGHTS = {
     "يفي بالتوقعات جزئياً": 1,
@@ -21,6 +26,13 @@ JUDGMENT_ORDER = [
     "يتجاوز التوقعات",
     "يتجاوز التوقعات بكثير"
 ]
+
+JUDGMENT_COLORS = {
+    "يفي بالتوقعات جزئياً": "#ef4444",
+    "يفي بالتوقعات": "#f59e0b",
+    "يتجاوز التوقعات": "#3b82f6",
+    "يتجاوز التوقعات بكثير": "#10b981",
+}
 
 MONTHS = [
     "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر",
@@ -68,6 +80,14 @@ ITEMS_STRUCTURE = {
     ]
 }
 
+DOMAIN_ICONS = {
+    "الإنجاز الأكاديمي": "🎓",
+    "التخطيط وإدارة الموقف التعليمي": "📋",
+    "التعليم والتعلم والتقويم": "📚",
+    "الموارد التعليمية والتكنولوجية": "💻",
+    "التطور الشخصي للطلبة": "🌱"
+}
+
 dept_passwords = {
     "admin1825": "الكل",
     "Arab1111": "قسم اللغة العربية",
@@ -83,367 +103,626 @@ dept_passwords = {
     "Family2020": "قسم التربية الاسرية"
 }
 
+# ─── CSS ─────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap');
+
+* { font-family: 'Tajawal', sans-serif !important; }
+
 .stApp {
     direction: rtl;
-    background: linear-gradient(135deg, #f7f9ff, #fff8f1);
+    background: #f0f4f8;
 }
-.big-title {
-    text-align: center;
-    font-size: 42px;
-    font-weight: 900;
-    color: #b91c1c;
-    margin-bottom: 20px;
+
+/* ── Sidebar ─────────────────────────── */
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #0f2044 0%, #1a3a6e 100%);
+    border-left: none;
 }
-.domain-title {
-    background: #d9eaf7;
-    color: #003b5c;
-    padding: 14px;
-    border-radius: 12px;
-    font-size: 24px;
-    font-weight: 900;
-    text-align: center;
-    margin-top: 28px;
+[data-testid="stSidebar"] * { color: #e8edf5 !important; }
+[data-testid="stSidebar"] .stRadio label { 
+    font-size: 15px !important; 
+    padding: 6px 0;
+}
+[data-testid="stSidebar"] h2 { 
+    color: #7eb3f7 !important;
+    font-size: 18px !important;
+    border-bottom: 1px solid rgba(126,179,247,0.3);
+    padding-bottom: 8px;
     margin-bottom: 12px;
 }
-.item-box {
-    background: #f2f2f2;
-    border: 1px solid #cfcfcf;
-    border-radius: 10px;
-    padding: 14px;
-    font-size: 19px;
-    font-weight: 700;
-    text-align: right;
+[data-testid="stSidebar"] .stTextInput input {
+    background: rgba(255,255,255,0.1) !important;
+    border: 1px solid rgba(126,179,247,0.4) !important;
+    color: white !important;
+    border-radius: 8px !important;
 }
-.kpi-card {
-    background: white;
-    border-radius: 18px;
-    padding: 22px;
-    text-align: center;
-    box-shadow: 0 3px 10px rgba(0,0,0,0.08);
-    border-top: 6px solid #2563eb;
+
+/* ── Page Header ──────────────────────── */
+.page-header {
+    background: linear-gradient(135deg, #0f2044 0%, #1a3a6e 50%, #1e4d9b 100%);
+    border-radius: 16px;
+    padding: 28px 36px;
+    margin-bottom: 24px;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 8px 32px rgba(15,32,68,0.25);
 }
-.kpi-title {
-    font-size: 17px;
-    color: #374151;
-    font-weight: 700;
-}
-.kpi-value {
-    font-size: 31px;
-    color: #111827;
+.page-header-title {
+    font-size: 28px;
     font-weight: 900;
+    margin: 0;
+    letter-spacing: -0.5px;
 }
-.footer-box {
-    display:flex;
-    justify-content:space-between;
-    font-size:16px;
-    font-weight:600;
-    color:#374151;
-    padding:10px 20px;
+.page-header-sub {
+    font-size: 14px;
+    opacity: 0.75;
+    margin-top: 4px;
 }
-@media (max-width: 768px) {
-    .big-title {font-size: 30px;}
-    .domain-title {font-size: 20px;}
-    .item-box {font-size: 16px;}
-    .footer-box {display:block; text-align:center; line-height:2;}
+.page-header-badge {
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 20px;
+    padding: 6px 18px;
+    font-size: 13px;
+    font-weight: 700;
 }
+
+/* ── Section Title ────────────────────── */
+.section-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 18px;
+    font-weight: 800;
+    color: #0f2044;
+    margin: 28px 0 14px 0;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #dbeafe;
+}
+.section-icon {
+    width: 32px; height: 32px;
+    background: linear-gradient(135deg, #1a3a6e, #2563eb);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-size: 16px;
+}
+
+/* ── KPI Cards ────────────────────────── */
+.kpi-grid { display: flex; gap: 14px; margin-bottom: 8px; }
+.kpi-card {
+    flex: 1;
+    background: white;
+    border-radius: 14px;
+    padding: 20px 18px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    border-top: 4px solid #2563eb;
+    text-align: center;
+    transition: transform 0.2s;
+}
+.kpi-card:hover { transform: translateY(-2px); }
+.kpi-card.green  { border-top-color: #10b981; }
+.kpi-card.amber  { border-top-color: #f59e0b; }
+.kpi-card.red    { border-top-color: #ef4444; }
+.kpi-card.blue   { border-top-color: #2563eb; }
+.kpi-label { font-size: 13px; color: #6b7280; font-weight: 600; margin-bottom: 6px; }
+.kpi-value { font-size: 30px; font-weight: 900; color: #111827; line-height: 1; }
+.kpi-sub   { font-size: 12px; color: #9ca3af; margin-top: 4px; }
+
+/* ── Judgment badge ───────────────────── */
+.badge {
+    display: inline-block;
+    padding: 4px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 700;
+}
+.badge-green  { background: #d1fae5; color: #065f46; }
+.badge-blue   { background: #dbeafe; color: #1e40af; }
+.badge-amber  { background: #fef3c7; color: #92400e; }
+.badge-red    { background: #fee2e2; color: #991b1b; }
+
+/* ── Domain Cards ─────────────────────── */
+.domain-card {
+    background: white;
+    border-radius: 14px;
+    padding: 18px 20px;
+    margin-bottom: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    border-right: 5px solid #2563eb;
+}
+.domain-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 10px;
+}
+.domain-name { font-size: 16px; font-weight: 800; color: #0f2044; }
+.progress-bar-bg {
+    height: 8px; background: #e5e7eb;
+    border-radius: 4px; overflow: hidden;
+}
+.progress-bar-fill {
+    height: 100%; border-radius: 4px;
+    background: linear-gradient(90deg, #2563eb, #3b82f6);
+    transition: width 0.6s ease;
+}
+
+/* ── Filter Panel ─────────────────────── */
+.filter-panel {
+    background: white;
+    border-radius: 14px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+    border: 1px solid #e5e7eb;
+}
+.filter-title {
+    font-size: 15px; font-weight: 800; color: #374151;
+    margin-bottom: 14px; display: flex; align-items: center; gap: 8px;
+}
+
+/* ── Form Styles ──────────────────────── */
+.form-section {
+    background: white;
+    border-radius: 14px;
+    padding: 22px 26px;
+    margin-bottom: 16px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+}
+.item-card {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+}
+.item-num {
+    display: inline-flex;
+    width: 26px; height: 26px;
+    background: #1a3a6e;
+    color: white;
+    border-radius: 50%;
+    align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700;
+    margin-left: 10px;
+    flex-shrink: 0;
+}
+.item-text { font-size: 15px; font-weight: 600; color: #1e293b; line-height: 1.5; }
+
+/* ── Plotly Override ──────────────────── */
+.js-plotly-plot .plotly { direction: ltr; }
+
+/* ── Footer ───────────────────────────── */
+.footer {
+    background: #0f2044;
+    border-radius: 12px;
+    padding: 16px 28px;
+    margin-top: 32px;
+    display: flex; justify-content: space-between; align-items: center;
+}
+.footer span { color: #94a3b8; font-size: 13px; font-weight: 600; }
+.footer .highlight { color: #7eb3f7; }
+
+/* ── Streamlit overrides ──────────────── */
+div[data-testid="stSelectbox"] > div { border-radius: 8px !important; }
+.stButton > button {
+    background: linear-gradient(135deg, #1a3a6e, #2563eb) !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 10px !important;
+    font-weight: 700 !important;
+    font-size: 16px !important;
+    padding: 12px 28px !important;
+    width: 100% !important;
+}
+.stButton > button:hover {
+    background: linear-gradient(135deg, #0f2044, #1a3a6e) !important;
+    transform: translateY(-1px);
+}
+div[data-testid="stMetric"] { display: none; }
 </style>
 """, unsafe_allow_html=True)
 
-try:
-    st.image(HEADER_PATH, use_container_width=True)
-except:
-    pass
 
-st.markdown('<div class="big-title">نظام الزيارات الصفية</div>', unsafe_allow_html=True)
-
-
+# ─── Helpers ──────────────────────────────────────────────────────────────────
 def normalize_text(x):
-    return (
-        str(x)
-        .strip()
-        .replace("أ", "ا")
-        .replace("إ", "ا")
-        .replace("آ", "ا")
-        .replace("ة", "ه")
-    )
+    return (str(x).strip()
+            .replace("أ","ا").replace("إ","ا")
+            .replace("آ","ا").replace("ة","ه"))
 
 
 @st.cache_data(ttl=60)
 def get_sheet_data(sheet_name):
     res = requests.get(GOOGLE_SCRIPT_URL, params={"sheet_name": sheet_name}, timeout=25)
     res.raise_for_status()
-    data = res.json()
-    return pd.DataFrame(data)
+    return pd.DataFrame(res.json())
 
 
 def send_to_google_sheet(row):
-    payload = {
-        "sheet_name": "Classroom_Visits",
-        "row": row
-    }
-    res = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=25)
+    res = requests.post(GOOGLE_SCRIPT_URL, json={"sheet_name":"Classroom_Visits","row":row}, timeout=25)
     res.raise_for_status()
     return res.json()
 
 
 def calculate_percentage(df):
-    item_cols = [f"بند {i}" for i in range(1, 19) if f"بند {i}" in df.columns]
+    item_cols = [f"بند {i}" for i in range(1,19) if f"بند {i}" in df.columns]
     if df.empty or not item_cols:
         return 0
-
     values = []
     for col in item_cols:
         values.extend(df[col].map(JUDGMENT_WEIGHTS).dropna().tolist())
-
-    if not values:
-        return 0
-
-    return round((sum(values) / (len(values) * 4)) * 100, 1)
+    return round((sum(values)/(len(values)*4))*100, 1) if values else 0
 
 
 def get_general_judgment(percent):
-    if percent >= 90:
-        return "يتجاوز التوقعات بكثير"
-    elif percent >= 75:
-        return "يتجاوز التوقعات"
-    elif percent >= 60:
-        return "يفي بالتوقعات"
-    else:
-        return "يفي بالتوقعات جزئياً"
+    if percent >= 90:   return "يتجاوز التوقعات بكثير"
+    elif percent >= 75: return "يتجاوز التوقعات"
+    elif percent >= 60: return "يفي بالتوقعات"
+    else:               return "يفي بالتوقعات جزئياً"
 
 
-def kpi_card(title, value):
-    st.markdown(
-        f"""
-        <div class="kpi-card">
-            <div class="kpi-title">{title}</div>
-            <div class="kpi-value">{value}</div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+def judgment_badge(judgment):
+    mapping = {
+        "يتجاوز التوقعات بكثير": "badge-green",
+        "يتجاوز التوقعات":       "badge-blue",
+        "يفي بالتوقعات":         "badge-amber",
+        "يفي بالتوقعات جزئياً":  "badge-red",
+    }
+    cls = mapping.get(judgment, "badge-blue")
+    return f'<span class="badge {cls}">{judgment}</span>'
 
 
-def filter_dataframe(df, allowed_dept):
-    st.markdown("### 🔍 الفلاتر")
+def kpi_card_html(label, value, color="blue", sub=""):
+    return f"""
+    <div class="kpi-card {color}">
+        <div class="kpi-label">{label}</div>
+        <div class="kpi-value">{value}</div>
+        {"<div class='kpi-sub'>"+sub+"</div>" if sub else ""}
+    </div>"""
 
-    c1, c2, c3, c4, c5 = st.columns(5)
 
+def section_title(icon, text):
+    st.markdown(f"""
+    <div class="section-title">
+        <div class="section-icon">{icon}</div>
+        {text}
+    </div>""", unsafe_allow_html=True)
+
+
+def percent_color(p):
+    if p >= 90: return "green"
+    elif p >= 75: return "blue"
+    elif p >= 60: return "amber"
+    return "red"
+
+
+# ─── Analysis Page ────────────────────────────────────────────────────────────
+def show_analysis(df, allowed_dept):
+    if df.empty:
+        st.warning("⚠️ لا توجد بيانات للعرض حالياً.")
+        return
+
+    if "نوع السجل" not in df.columns:
+        df["نوع السجل"] = "زيارة صفية"
+
+    # ── FILTERS ──────────────────────────────────────────────────────────────
+    st.markdown('<div class="filter-panel">', unsafe_allow_html=True)
+    st.markdown('<div class="filter-title">🔍 &nbsp; تصفية البيانات</div>', unsafe_allow_html=True)
+
+    col1, col2, col3, col4, col5 = st.columns(5)
     filtered = df.copy()
 
-    if "نوع السجل" not in filtered.columns:
-        filtered["نوع السجل"] = "زيارة صفية"
-
-    with c1:
+    with col1:
         years = ["الكل"] + sorted(filtered["السنة الدراسية"].dropna().astype(str).unique().tolist()) if "السنة الدراسية" in filtered.columns else ["الكل"]
-        year = st.selectbox("السنة الدراسية", years)
-
+        year = st.selectbox("📅 السنة الدراسية", years)
     if year != "الكل":
         filtered = filtered[filtered["السنة الدراسية"].astype(str) == year]
 
-    with c2:
-        semesters = ["الكل"] + sorted(filtered["الفصل الدراسي"].dropna().astype(str).unique().tolist()) if "الفصل الدراسي" in filtered.columns else ["الكل"]
-        semester = st.selectbox("الفصل الدراسي", semesters)
+    with col2:
+        sems = ["الكل"] + sorted(filtered["الفصل الدراسي"].dropna().astype(str).unique().tolist()) if "الفصل الدراسي" in filtered.columns else ["الكل"]
+        sem = st.selectbox("📖 الفصل الدراسي", sems)
+    if sem != "الكل":
+        filtered = filtered[filtered["الفصل الدراسي"].astype(str) == sem]
 
-    if semester != "الكل":
-        filtered = filtered[filtered["الفصل الدراسي"].astype(str) == semester]
-
-    with c3:
-        months = ["الكل"] + [m for m in MONTHS if "الشهر" in filtered.columns and m in filtered["الشهر"].astype(str).unique()]
-        month = st.selectbox("الشهر", months)
-
+    with col3:
+        months_avail = ["الكل"] + [m for m in MONTHS if "الشهر" in filtered.columns and m in filtered["الشهر"].astype(str).unique()]
+        month = st.selectbox("🗓️ الشهر", months_avail)
     if month != "الكل":
         filtered = filtered[filtered["الشهر"].astype(str) == month]
 
-    with c4:
-        record_types = ["الكل"] + sorted(filtered["نوع السجل"].dropna().astype(str).unique().tolist())
-        record_type = st.selectbox("نوع السجل", record_types)
-
-    if record_type != "الكل":
-        filtered = filtered[filtered["نوع السجل"].astype(str) == record_type]
+    with col4:
+        rtypes = ["الكل"] + sorted(filtered["نوع السجل"].dropna().astype(str).unique().tolist())
+        rtype = st.selectbox("📌 نوع السجل", rtypes)
+    if rtype != "الكل":
+        filtered = filtered[filtered["نوع السجل"].astype(str) == rtype]
 
     if allowed_dept == "الكل":
-        with c5:
+        with col5:
             depts = ["الكل"] + sorted(filtered["القسم الأكاديمي"].dropna().astype(str).unique().tolist()) if "القسم الأكاديمي" in filtered.columns else ["الكل"]
-            dept = st.selectbox("القسم الأكاديمي", depts)
-
+            dept = st.selectbox("🏫 القسم الأكاديمي", depts)
         if dept != "الكل":
             filtered = filtered[filtered["القسم الأكاديمي"].astype(str) == dept]
     else:
-        filtered = filtered[
-            filtered["القسم الأكاديمي"].apply(normalize_text) == normalize_text(allowed_dept)
-        ]
+        filtered = filtered[filtered["القسم الأكاديمي"].apply(normalize_text) == normalize_text(allowed_dept)]
 
     teachers = ["الكل"] + sorted(filtered["اسم المعلمة"].dropna().astype(str).unique().tolist()) if "اسم المعلمة" in filtered.columns else ["الكل"]
-    teacher = st.selectbox("اسم المعلمة", teachers)
-
+    teacher = st.selectbox("👩‍🏫 اسم المعلمة", teachers)
     if teacher != "الكل":
         filtered = filtered[filtered["اسم المعلمة"].astype(str) == teacher]
 
-    return filtered
-
-
-def show_analysis(df, allowed_dept):
-    if df.empty:
-        st.warning("لا توجد بيانات للعرض حالياً.")
-        return
-
-    filtered = filter_dataframe(df, allowed_dept)
+    st.markdown('</div>', unsafe_allow_html=True)
 
     if filtered.empty:
-        st.warning("لا توجد بيانات حسب الفلاتر المختارة.")
+        st.warning("⚠️ لا توجد بيانات حسب الفلاتر المختارة.")
         return
 
-    percent = calculate_percentage(filtered)
+    # ── 1. KPIs ──────────────────────────────────────────────────────────────
+    section_title("📊", "الملخص التنفيذي")
+
+    percent  = calculate_percentage(filtered)
     judgment = get_general_judgment(percent)
+    n_records = len(filtered)
+    n_teachers = filtered["اسم المعلمة"].nunique() if "اسم المعلمة" in filtered.columns else 0
+    pcolor = percent_color(percent)
 
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        kpi_card("عدد السجلات", len(filtered))
-    with c2:
-        kpi_card("عدد المعلمات", filtered["اسم المعلمة"].nunique() if "اسم المعلمة" in filtered.columns else 0)
-    with c3:
-        kpi_card("النسبة العامة", f"{percent}%")
-    with c4:
-        kpi_card("الحكم العام", judgment)
+    st.markdown(f"""
+    <div class="kpi-grid">
+        {kpi_card_html("إجمالي السجلات", n_records, "blue", "زيارة / تقييم")}
+        {kpi_card_html("عدد المعلمات", n_teachers, "blue", "معلمة مشمولة")}
+        {kpi_card_html("النسبة العامة", f"{percent}%", pcolor)}
+        <div class="kpi-card {pcolor}">
+            <div class="kpi-label">الحكم العام</div>
+            <div style="margin-top:8px">{judgment_badge(judgment)}</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    st.divider()
+    # ── 2. DOMAINS ────────────────────────────────────────────────────────────
+    section_title("🧩", "تحليل المجالات الخمسة")
 
-    item_cols = [f"بند {i}" for i in range(1, 19) if f"بند {i}" in filtered.columns]
-
-    st.markdown("### 📊 توزيع الأحكام")
-    all_judgments = []
-    for col in item_cols:
-        all_judgments.extend(filtered[col].dropna().astype(str).tolist())
-
-    judgment_df = pd.DataFrame({"الحكم": all_judgments})
-    if not judgment_df.empty:
-        counts = judgment_df["الحكم"].value_counts().reindex(JUDGMENT_ORDER).dropna().reset_index()
-        counts.columns = ["الحكم", "العدد"]
-        counts["النسبة"] = round(counts["العدد"] / counts["العدد"].sum() * 100, 1)
-
-        fig = px.pie(counts, names="الحكم", values="العدد", hole=0.35)
-        st.plotly_chart(fig, use_container_width=True)
-
-        st.dataframe(counts, use_container_width=True, hide_index=True)
-
-    st.markdown("### 🧩 تحليل المجالات الخمسة")
     domains_result = []
-
     for domain, items in ITEMS_STRUCTURE.items():
-        domain_cols = [f"بند {num}" for num, _ in items if f"بند {num}" in filtered.columns]
-        values = []
-        for col in domain_cols:
-            values.extend(filtered[col].map(JUDGMENT_WEIGHTS).dropna().tolist())
+        dcols = [f"بند {n}" for n, _ in items if f"بند {n}" in filtered.columns]
+        vals = []
+        for col in dcols:
+            vals.extend(filtered[col].map(JUDGMENT_WEIGHTS).dropna().tolist())
+        if vals:
+            dp = round((sum(vals)/(len(vals)*4))*100, 1)
+            domains_result.append({"المجال": domain, "النسبة": dp, "الحكم": get_general_judgment(dp)})
 
-        if values:
-            domain_percent = round((sum(values) / (len(values) * 4)) * 100, 1)
-            domains_result.append({
-                "المجال": domain,
-                "النسبة": domain_percent,
-                "الحكم": get_general_judgment(domain_percent)
-            })
+    if domains_result:
+        col_a, col_b = st.columns([3, 2])
 
-    domains_df = pd.DataFrame(domains_result)
-    if not domains_df.empty:
-        fig = px.bar(domains_df, x="النسبة", y="المجال", orientation="h", text="النسبة")
-        st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(domains_df, use_container_width=True, hide_index=True)
+        with col_a:
+            df_dom = pd.DataFrame(domains_result).sort_values("النسبة", ascending=True)
+            colors = [JUDGMENT_COLORS.get(get_general_judgment(p), "#2563eb") for p in df_dom["النسبة"]]
+            fig = go.Figure(go.Bar(
+                x=df_dom["النسبة"], y=df_dom["المجال"],
+                orientation="h",
+                marker_color=colors,
+                text=[f"{p}%" for p in df_dom["النسبة"]],
+                textposition="outside",
+                textfont=dict(size=13, color="#111827"),
+            ))
+            fig.update_layout(
+                xaxis=dict(range=[0, 115], showgrid=True, gridcolor="#f0f4f8", zeroline=False),
+                yaxis=dict(tickfont=dict(size=13)),
+                plot_bgcolor="white", paper_bgcolor="white",
+                margin=dict(l=10, r=40, t=10, b=10),
+                height=280,
+                font=dict(family="Tajawal"),
+            )
+            st.plotly_chart(fig, use_container_width=True)
 
-    st.markdown("### 📌 تحليل البنود الـ 18")
+        with col_b:
+            for row in domains_result:
+                icon = DOMAIN_ICONS.get(row["المجال"], "📌")
+                pct = row["النسبة"]
+                bar_color = JUDGMENT_COLORS.get(row["الحكم"], "#2563eb")
+                st.markdown(f"""
+                <div class="domain-card" style="border-right-color:{bar_color}">
+                    <div class="domain-header">
+                        <span class="domain-name">{icon} {row["المجال"]}</span>
+                        {judgment_badge(row["الحكم"])}
+                    </div>
+                    <div class="progress-bar-bg">
+                        <div class="progress-bar-fill" style="width:{pct}%; background:{bar_color}"></div>
+                    </div>
+                    <div style="text-align:left; font-size:12px; color:#6b7280; margin-top:4px">{pct}%</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+    # ── 3. ITEMS ─────────────────────────────────────────────────────────────
+    section_title("📌", "تفصيل البنود الـ 18")
+
     items_result = []
-
     for i in range(1, 19):
         col = f"بند {i}"
         if col in filtered.columns:
-            values = filtered[col].map(JUDGMENT_WEIGHTS).dropna().tolist()
-            if values:
-                item_percent = round((sum(values) / (len(values) * 4)) * 100, 1)
-                items_result.append({
-                    "البند": col,
-                    "النسبة": item_percent,
-                    "الحكم": get_general_judgment(item_percent)
-                })
+            vals = filtered[col].map(JUDGMENT_WEIGHTS).dropna().tolist()
+            if vals:
+                ip = round((sum(vals)/(len(vals)*4))*100, 1)
+                items_result.append({"البند": f"بند {i}", "النسبة": ip, "الحكم": get_general_judgment(ip)})
 
-    items_df = pd.DataFrame(items_result)
-    if not items_df.empty:
-        fig = px.bar(items_df, x="النسبة", y="البند", orientation="h", text="النسبة")
-        st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(items_df, use_container_width=True, hide_index=True)
+    if items_result:
+        df_items = pd.DataFrame(items_result).sort_values("النسبة", ascending=True)
+        colors_i = [JUDGMENT_COLORS.get(get_general_judgment(p), "#2563eb") for p in df_items["النسبة"]]
+        fig2 = go.Figure(go.Bar(
+            x=df_items["النسبة"], y=df_items["البند"],
+            orientation="h",
+            marker_color=colors_i,
+            text=[f"{p}%" for p in df_items["النسبة"]],
+            textposition="outside",
+            textfont=dict(size=12, color="#111827"),
+        ))
+        fig2.update_layout(
+            xaxis=dict(range=[0, 115], showgrid=True, gridcolor="#f0f4f8", zeroline=False),
+            yaxis=dict(tickfont=dict(size=12)),
+            plot_bgcolor="white", paper_bgcolor="white",
+            margin=dict(l=10, r=40, t=10, b=10),
+            height=480,
+            font=dict(family="Tajawal"),
+        )
+        st.plotly_chart(fig2, use_container_width=True)
 
-    st.markdown("### 👩‍🏫 تحليل المعلمات")
+        # Items table with color rows
+        with st.expander("📋 عرض جدول البنود التفصيلي"):
+            st.dataframe(
+                df_items.sort_values("النسبة", ascending=False),
+                use_container_width=True, hide_index=True
+            )
+
+    # ── 4. JUDGMENT DISTRIBUTION ──────────────────────────────────────────────
+    section_title("🎯", "توزيع الأحكام الكلي")
+
+    item_cols = [f"بند {i}" for i in range(1,19) if f"بند {i}" in filtered.columns]
+    all_j = []
+    for col in item_cols:
+        all_j.extend(filtered[col].dropna().astype(str).tolist())
+
+    if all_j:
+        j_df = pd.DataFrame({"الحكم": all_j})
+        counts = j_df["الحكم"].value_counts().reindex(JUDGMENT_ORDER).dropna().reset_index()
+        counts.columns = ["الحكم", "العدد"]
+        counts["النسبة"] = round(counts["العدد"]/counts["العدد"].sum()*100, 1)
+
+        col_p, col_t = st.columns([1, 1])
+        with col_p:
+            fig_pie = go.Figure(go.Pie(
+                labels=counts["الحكم"],
+                values=counts["العدد"],
+                hole=0.45,
+                marker_colors=[JUDGMENT_COLORS.get(j,"#94a3b8") for j in counts["الحكم"]],
+                textinfo="percent+label",
+                textfont=dict(size=13, family="Tajawal"),
+                insidetextorientation="radial",
+            ))
+            fig_pie.update_layout(
+                showlegend=False,
+                margin=dict(l=10, r=10, t=10, b=10),
+                height=280,
+                paper_bgcolor="white",
+                font=dict(family="Tajawal"),
+            )
+            st.plotly_chart(fig_pie, use_container_width=True)
+
+        with col_t:
+            st.markdown("<br>", unsafe_allow_html=True)
+            for _, row in counts.iterrows():
+                badge = judgment_badge(row["الحكم"])
+                st.markdown(f"""
+                <div style="display:flex; justify-content:space-between; align-items:center;
+                            padding:10px 14px; background:white; border-radius:10px;
+                            margin-bottom:8px; box-shadow:0 1px 6px rgba(0,0,0,0.06);">
+                    <span>{badge}</span>
+                    <span style="font-size:20px; font-weight:900; color:#111827">{int(row['العدد'])}</span>
+                    <span style="font-size:13px; color:#6b7280">{row['النسبة']}%</span>
+                </div>""", unsafe_allow_html=True)
+
+    # ── 5. TEACHERS ───────────────────────────────────────────────────────────
+    section_title("👩‍🏫", "تحليل أداء المعلمات")
+
     if "اسم المعلمة" in filtered.columns:
         teacher_rows = []
-        for teacher_name, group in filtered.groupby("اسم المعلمة"):
-            p = calculate_percentage(group)
+        for tname, grp in filtered.groupby("اسم المعلمة"):
+            tp = calculate_percentage(grp)
             teacher_rows.append({
-                "اسم المعلمة": teacher_name,
-                "عدد السجلات": len(group),
-                "النسبة": p,
-                "الحكم": get_general_judgment(p)
+                "اسم المعلمة": tname,
+                "عدد السجلات": len(grp),
+                "النسبة %": tp,
+                "الحكم": get_general_judgment(tp)
             })
+        tdf = pd.DataFrame(teacher_rows).sort_values("النسبة %", ascending=False)
 
-        teachers_analysis = pd.DataFrame(teacher_rows).sort_values("النسبة", ascending=False)
-        st.dataframe(teachers_analysis, use_container_width=True, hide_index=True)
+        if len(tdf) > 1:
+            fig_t = go.Figure(go.Bar(
+                x=tdf["اسم المعلمة"], y=tdf["النسبة %"],
+                marker_color=[JUDGMENT_COLORS.get(get_general_judgment(p), "#2563eb") for p in tdf["النسبة %"]],
+                text=[f"{p}%" for p in tdf["النسبة %"]],
+                textposition="outside",
+                textfont=dict(size=12),
+            ))
+            fig_t.update_layout(
+                xaxis=dict(tickangle=-30, tickfont=dict(size=11)),
+                yaxis=dict(range=[0,115], showgrid=True, gridcolor="#f0f4f8"),
+                plot_bgcolor="white", paper_bgcolor="white",
+                margin=dict(l=10, r=10, t=10, b=60),
+                height=320,
+                font=dict(family="Tajawal"),
+            )
+            st.plotly_chart(fig_t, use_container_width=True)
 
+        with st.expander("📋 جدول تفصيلي للمعلمات"):
+            st.dataframe(tdf, use_container_width=True, hide_index=True)
+
+    # ── 6. DEPARTMENTS (admin only) ───────────────────────────────────────────
     if allowed_dept == "الكل" and "القسم الأكاديمي" in filtered.columns:
-        st.markdown("### 🏫 مقارنة الأقسام")
+        section_title("🏫", "مقارنة الأقسام الأكاديمية")
         dept_rows = []
-        for dept, group in filtered.groupby("القسم الأكاديمي"):
-            p = calculate_percentage(group)
-            dept_rows.append({
-                "القسم الأكاديمي": dept,
-                "عدد السجلات": len(group),
-                "النسبة": p,
-                "الحكم": get_general_judgment(p)
-            })
+        for dname, grp in filtered.groupby("القسم الأكاديمي"):
+            dp = calculate_percentage(grp)
+            dept_rows.append({"القسم": dname, "عدد السجلات": len(grp), "النسبة %": dp, "الحكم": get_general_judgment(dp)})
+        ddf = pd.DataFrame(dept_rows).sort_values("النسبة %", ascending=False)
 
-        dept_analysis = pd.DataFrame(dept_rows).sort_values("النسبة", ascending=False)
-        fig = px.bar(dept_analysis, x="القسم الأكاديمي", y="النسبة", text="النسبة")
-        st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(dept_analysis, use_container_width=True, hide_index=True)
+        fig_d = go.Figure(go.Bar(
+            x=ddf["القسم"], y=ddf["النسبة %"],
+            marker_color=[JUDGMENT_COLORS.get(get_general_judgment(p),"#2563eb") for p in ddf["النسبة %"]],
+            text=[f"{p}%" for p in ddf["النسبة %"]],
+            textposition="outside",
+            textfont=dict(size=12),
+        ))
+        fig_d.update_layout(
+            xaxis=dict(tickangle=-30, tickfont=dict(size=11)),
+            yaxis=dict(range=[0,115], showgrid=True, gridcolor="#f0f4f8"),
+            plot_bgcolor="white", paper_bgcolor="white",
+            margin=dict(l=10, r=10, t=10, b=80),
+            height=340,
+            font=dict(family="Tajawal"),
+        )
+        st.plotly_chart(fig_d, use_container_width=True)
+        with st.expander("📋 جدول مقارنة الأقسام"):
+            st.dataframe(ddf, use_container_width=True, hide_index=True)
 
-    st.markdown("### 📝 الملاحظات النصية")
+    # ── 7. TEXT NOTES ─────────────────────────────────────────────────────────
     text_cols = [
-        "نجاحات المعلم",
-        "جوانب بحاجة إلى تطوير",
-        "نقاط القوة في أدائي العام",
-        "نقاط الضعف التي تحتاج إلى تطوير",
-        "الدعم المطلوب من زيارات القيادة الوسطى",
-        "مقترحاتي لتطوير أدائي",
-        "الأهداف التعليمية للحصة",
-        "أساليب واستراتيجيات التدريس الملحوظة",
+        "نجاحات المعلم", "جوانب بحاجة إلى تطوير",
+        "نقاط القوة في أدائي العام", "نقاط الضعف التي تحتاج إلى تطوير",
+        "الدعم المطلوب من زيارات القيادة الوسطى", "مقترحاتي لتطوير أدائي",
+        "الأهداف التعليمية للحصة", "أساليب واستراتيجيات التدريس الملحوظة",
         "ما الذي يمكن أن أستفيد منه لتطوير ممارساتي التدريسية",
         "أفكار جديدة يمكن أن أستفيد منها لتطوير ممارساتي التدريسية",
         "توصيات المعلم المزور"
     ]
+    avail_txt = [c for c in text_cols if c in filtered.columns]
+    if avail_txt:
+        section_title("📝", "الملاحظات والتوصيات النصية")
+        with st.expander("عرض الملاحظات النصية التفصيلية"):
+            base_cols = ["اسم المعلمة", "القسم الأكاديمي", "نوع السجل", "الشهر"]
+            show_cols = [c for c in base_cols if c in filtered.columns] + avail_txt
+            st.dataframe(filtered[show_cols], use_container_width=True, hide_index=True)
 
-    available_text_cols = [c for c in text_cols if c in filtered.columns]
-    if available_text_cols:
-        st.dataframe(
-            filtered[["اسم المعلمة", "القسم الأكاديمي", "نوع السجل", "الشهر"] + available_text_cols],
-            use_container_width=True,
-            hide_index=True
-        )
 
-
+# ─── Entry Form ──────────────────────────────────────────────────────────────
 def show_form(teachers_df, allowed_dept):
-    st.markdown("## 📝 استمارة الزيارات الصفية")
+    st.markdown("""
+    <div class="page-header">
+        <div>
+            <div class="page-header-title">📝 استمارة الزيارة الصفية</div>
+            <div class="page-header-sub">تسجيل بيانات الزيارة أو التقييم الذاتي أو التوأمة الموجهة</div>
+        </div>
+    </div>""", unsafe_allow_html=True)
 
     if "القسم الأكاديمي" not in teachers_df.columns or "اسم المعلمة" not in teachers_df.columns:
-        st.error("لازم يكون في شيت Teachers عمودين باسم: القسم الأكاديمي، اسم المعلمة")
+        st.error("⚠️ تأكد من وجود عمودي: القسم الأكاديمي، اسم المعلمة في شيت Teachers")
         st.stop()
 
-    departments = sorted(
-        teachers_df["القسم الأكاديمي"]
-        .dropna()
-        .astype(str)
-        .str.strip()
-        .unique()
-    )
+    # ── Basic Info ────────────────────────────────────────────────────────────
+    st.markdown('<div class="form-section">', unsafe_allow_html=True)
+    section_title("👤", "البيانات الأساسية")
 
+    departments = sorted(teachers_df["القسم الأكاديمي"].dropna().astype(str).str.strip().unique())
     c1, c2, c3 = st.columns(3)
 
     with c1:
@@ -451,227 +730,218 @@ def show_form(teachers_df, allowed_dept):
             selected_dept = st.selectbox("القسم الأكاديمي", departments)
         else:
             selected_dept = allowed_dept
-            st.info(f"القسم: {selected_dept}")
+            st.info(f"🏫 القسم: **{selected_dept}**")
 
     filtered_teachers = teachers_df[
         teachers_df["القسم الأكاديمي"].apply(normalize_text) == normalize_text(selected_dept)
     ]["اسم المعلمة"].dropna().astype(str).str.strip().unique()
-
-    filtered_teachers = sorted([name for name in filtered_teachers if name and name.lower() != "nan"])
+    filtered_teachers = sorted([n for n in filtered_teachers if n and n.lower() != "nan"])
 
     with c2:
         teacher_name = st.selectbox("اسم المعلمة", filtered_teachers) if filtered_teachers else st.text_input("اسم المعلمة")
-
     with c3:
-        visit_type = st.selectbox("الزائر", VISITOR_TYPES)
+        visit_type = st.selectbox("نوع / جهة الزيارة", VISITOR_TYPES)
 
     c4, c5, c6 = st.columns(3)
-
     with c4:
-        school_year = st.selectbox("السنة الدراسية", ["2024-2025", "2025-2026", "2026-2027"])
-
+        school_year = st.selectbox("السنة الدراسية", ["2024-2025","2025-2026","2026-2027"])
     with c5:
-        semester = st.selectbox("الفصل الدراسي", ["الفصل الدراسي الأول", "الفصل الدراسي الثاني"])
-
+        semester = st.selectbox("الفصل الدراسي", ["الفصل الدراسي الأول","الفصل الدراسي الثاني"])
     with c6:
         month = st.selectbox("الشهر", MONTHS)
 
-    is_self_assessment = visit_type == "التقييم الذاتي"
-    is_peer_coaching = visit_type == "التوأمة الموجهة"
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown(
-        '<div style="text-align:center; font-size:30px; font-weight:900; margin-top:25px;">بنود الملاحظة</div>',
-        unsafe_allow_html=True
-    )
+    is_self = visit_type == "التقييم الذاتي"
+    is_peer = visit_type == "التوأمة الموجهة"
+
+    # ── Observation Items ─────────────────────────────────────────────────────
+    section_title("📋", "بنود الملاحظة الصفية")
 
     answers = {}
-
     for domain, items in ITEMS_STRUCTURE.items():
-        st.markdown(f'<div class="domain-title">{domain}</div>', unsafe_allow_html=True)
+        icon = DOMAIN_ICONS.get(domain, "📌")
+        st.markdown(f"""
+        <div style="background:linear-gradient(135deg,#0f2044,#1a3a6e);
+                    color:white; border-radius:10px; padding:12px 18px;
+                    font-size:17px; font-weight:800; margin:18px 0 12px 0;">
+            {icon} &nbsp; {domain}
+        </div>""", unsafe_allow_html=True)
 
-        for item_number, item_text in items:
-            col_text, col_choice = st.columns([3, 2])
-
-            with col_text:
-                st.markdown(
-                    f'<div class="item-box"><b>{item_number}.</b> {item_text}</div>',
-                    unsafe_allow_html=True
-                )
-
-            with col_choice:
-                answers[f"بند {item_number}"] = st.radio(
-                    "اختيار الحكم",
-                    JUDGMENT_ORDER,
-                    horizontal=True,
-                    key=f"item_{item_number}",
+        for item_num, item_text in items:
+            col_txt, col_radio = st.columns([3, 2])
+            with col_txt:
+                st.markdown(f"""
+                <div class="item-card">
+                    <div style="display:flex; align-items:flex-start; gap:10px;">
+                        <span class="item-num">{item_num}</span>
+                        <span class="item-text">{item_text}</span>
+                    </div>
+                </div>""", unsafe_allow_html=True)
+            with col_radio:
+                answers[f"بند {item_num}"] = st.radio(
+                    "الحكم", JUDGMENT_ORDER,
+                    horizontal=False,
+                    key=f"item_{item_num}",
                     label_visibility="collapsed"
                 )
 
-    st.divider()
-    st.markdown("### 📝 البيانات الختامية")
+    # ── Closing Notes ─────────────────────────────────────────────────────────
+    st.markdown('<div class="form-section">', unsafe_allow_html=True)
+    section_title("📝", "البيانات الختامية")
 
-    strengths = ""
-    improvements = ""
-    weaknesses = ""
-    support_needed = ""
-    suggestions = ""
+    strengths=improvements=weaknesses=support=suggestions=""
+    visiting_teacher=visiting_dept=visiting_school=visited_school=""
+    lesson_goals=observed_strats=useful_practices=new_ideas=recommendations=""
 
-    visiting_teacher = ""
-    visiting_teacher_dept = ""
-    visiting_teacher_school = ""
-    visited_teacher_school = ""
-    lesson_goals = ""
-    observed_strategies = ""
-    useful_practices = ""
-    new_ideas = ""
-    visited_teacher_recommendations = ""
-
-    if is_self_assessment:
-        strengths = st.text_area("نقاط القوة في أدائي العام")
-        weaknesses = st.text_area("نقاط الضعف التي تحتاج إلى تطوير")
-        support_needed = st.text_area("ما نوع الدعم الذي أحتاجه من زيارات القيادة الوسطى لجميع المعلمات لتطوير أدائي؟")
-        suggestions = st.text_area("مقترحاتي لتطوير أدائي في المواقف التعليمية")
-
-    elif is_peer_coaching:
+    if is_self:
         c1, c2 = st.columns(2)
         with c1:
-            visiting_teacher = st.text_input("المعلم الزائر")
-            visiting_teacher_dept = st.text_input("القسم الأكاديمي للمعلم الزائر")
-            visiting_teacher_school = st.text_input("اسم المدرسة للمعلم الزائر")
+            strengths  = st.text_area("✅ نقاط القوة في أدائي العام", height=100)
+            support    = st.text_area("🤝 الدعم المطلوب من زيارات القيادة الوسطى", height=100)
         with c2:
-            visited_teacher_school = st.text_input("اسم المدرسة للمعلم المزور")
+            weaknesses  = st.text_area("⚠️ نقاط الضعف التي تحتاج إلى تطوير", height=100)
+            suggestions = st.text_area("💡 مقترحاتي لتطوير أدائي", height=100)
 
-        lesson_goals = st.text_area("الأهداف التعليمية للحصة")
-        observed_strategies = st.text_area("أساليب واستراتيجيات التدريس الملحوظة")
-        useful_practices = st.text_area("ما الذي يمكن أن أستفيد منه لتطوير ممارساتي التدريسية")
-        new_ideas = st.text_area("أفكار جديدة يمكن أن أستفيد منها لتطوير ممارساتي التدريسية")
-        visited_teacher_recommendations = st.text_area("توصيات المعلم المزور - خاص بالمعلم المزور")
-
+    elif is_peer:
+        c1, c2 = st.columns(2)
+        with c1:
+            visiting_teacher = st.text_input("👩‍🏫 المعلمة الزائرة")
+            visiting_dept    = st.text_input("🏫 قسم المعلمة الزائرة")
+            visiting_school  = st.text_input("🏛️ مدرسة المعلمة الزائرة")
+        with c2:
+            visited_school = st.text_input("🏛️ مدرسة المعلمة المزورة")
+        lesson_goals      = st.text_area("🎯 الأهداف التعليمية للحصة", height=80)
+        observed_strats   = st.text_area("📖 أساليب واستراتيجيات التدريس الملحوظة", height=80)
+        useful_practices  = st.text_area("💡 ما الذي يمكن أن أستفيد منه لتطوير ممارساتي", height=80)
+        new_ideas         = st.text_area("🚀 أفكار جديدة يمكن أن أستفيد منها", height=80)
+        recommendations   = st.text_area("📋 توصيات المعلمة المزورة", height=80)
     else:
-        strengths = st.text_area("نجاحات المعلم")
-        improvements = st.text_area("جوانب بحاجة إلى تطوير")
+        c1, c2 = st.columns(2)
+        with c1:
+            strengths    = st.text_area("✅ نجاحات المعلمة", height=120)
+        with c2:
+            improvements = st.text_area("📈 جوانب بحاجة إلى تطوير", height=120)
 
-    if st.button("💾 حفظ السجل", use_container_width=True):
-        record_type = (
-            "تقييم ذاتي" if is_self_assessment
-            else "توأمة موجهة" if is_peer_coaching
-            else "زيارة صفية"
-        )
+    st.markdown('</div>', unsafe_allow_html=True)
 
+    # ── Save ─────────────────────────────────────────────────────────────────
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("💾  حفظ السجل"):
+        record_type = ("تقييم ذاتي" if is_self else "توأمة موجهة" if is_peer else "زيارة صفية")
         row = {
-            "نوع السجل": record_type,
-            "السنة الدراسية": school_year,
-            "الفصل الدراسي": semester,
-            "القسم الأكاديمي": selected_dept,
-            "اسم المعلمة": teacher_name,
-            "الزائر": visit_type,
-            "الشهر": month,
-            "نوع الزيارة": visit_type,
-
-            "بند 1": answers["بند 1"],
-            "بند 2": answers["بند 2"],
-            "بند 3": answers["بند 3"],
-            "بند 4": answers["بند 4"],
-            "بند 5": answers["بند 5"],
-            "بند 6": answers["بند 6"],
-            "بند 7": answers["بند 7"],
-            "بند 8": answers["بند 8"],
-            "بند 9": answers["بند 9"],
-            "بند 10": answers["بند 10"],
-            "بند 11": answers["بند 11"],
-            "بند 12": answers["بند 12"],
-            "بند 13": answers["بند 13"],
-            "بند 14": answers["بند 14"],
-            "بند 15": answers["بند 15"],
-            "بند 16": answers["بند 16"],
-            "بند 17": answers["بند 17"],
-            "بند 18": answers["بند 18"],
-
-            "نجاحات المعلم": strengths if not is_self_assessment else "",
+            "نوع السجل": record_type, "السنة الدراسية": school_year,
+            "الفصل الدراسي": semester, "القسم الأكاديمي": selected_dept,
+            "اسم المعلمة": teacher_name, "الزائر": visit_type, "الشهر": month,
+            **{f"بند {i}": answers[f"بند {i}"] for i in range(1,19)},
+            "نجاحات المعلم": strengths if not is_self else "",
             "جوانب بحاجة إلى تطوير": improvements,
-
-            "نقاط القوة في أدائي العام": strengths if is_self_assessment else "",
+            "نقاط القوة في أدائي العام": strengths if is_self else "",
             "نقاط الضعف التي تحتاج إلى تطوير": weaknesses,
-            "الدعم المطلوب من زيارات القيادة الوسطى": support_needed,
+            "الدعم المطلوب من زيارات القيادة الوسطى": support,
             "مقترحاتي لتطوير أدائي": suggestions,
-
             "المعلم الزائر": visiting_teacher,
-            "القسم الأكاديمي للمعلم الزائر": visiting_teacher_dept,
-            "اسم المدرسة للمعلم الزائر": visiting_teacher_school,
-            "اسم المدرسة للمعلم المزور": visited_teacher_school,
+            "القسم الأكاديمي للمعلم الزائر": visiting_dept,
+            "اسم المدرسة للمعلم الزائر": visiting_school,
+            "اسم المدرسة للمعلم المزور": visited_school,
             "الأهداف التعليمية للحصة": lesson_goals,
-            "أساليب واستراتيجيات التدريس الملحوظة": observed_strategies,
+            "أساليب واستراتيجيات التدريس الملحوظة": observed_strats,
             "ما الذي يمكن أن أستفيد منه لتطوير ممارساتي التدريسية": useful_practices,
             "أفكار جديدة يمكن أن أستفيد منها لتطوير ممارساتي التدريسية": new_ideas,
-            "توصيات المعلم المزور": visited_teacher_recommendations
+            "توصيات المعلم المزور": recommendations,
         }
-
         try:
             send_to_google_sheet(row)
             st.cache_data.clear()
-            st.success("تم حفظ السجل بنجاح ✅")
+            st.success("✅ تم حفظ السجل بنجاح!")
         except Exception as e:
-            st.error("حدث خطأ أثناء الحفظ")
+            st.error("❌ حدث خطأ أثناء الحفظ")
             st.write(e)
 
 
-st.sidebar.markdown("## 🔐 الدخول")
+# ─── Auth ─────────────────────────────────────────────────────────────────────
+try:
+    st.image(HEADER_PATH, use_container_width=True)
+except:
+    pass
+
+st.sidebar.markdown("## 🔐 تسجيل الدخول")
 
 if "logged_in" not in st.session_state:
-    st.session_state["logged_in"] = False
-    st.session_state["allowed_dept"] = None
+    st.session_state.update({"logged_in": False, "allowed_dept": None})
 
 if not st.session_state["logged_in"]:
-    site_password = st.sidebar.text_input("أدخلي الرقم السري", type="password")
-
-    if site_password:
-        if site_password in dept_passwords:
-            st.session_state["logged_in"] = True
-            st.session_state["allowed_dept"] = dept_passwords[site_password]
+    pwd = st.sidebar.text_input("الرقم السري", type="password", placeholder="أدخلي الرقم السري...")
+    if pwd:
+        if pwd in dept_passwords:
+            st.session_state.update({"logged_in": True, "allowed_dept": dept_passwords[pwd]})
             st.rerun()
         else:
             st.sidebar.error("❌ الرقم السري غير صحيح")
-
+    st.markdown("""
+    <div style="text-align:center; padding:80px 20px; color:#6b7280;">
+        <div style="font-size:64px; margin-bottom:16px;">🏫</div>
+        <div style="font-size:22px; font-weight:800; color:#0f2044; margin-bottom:8px;">نظام الزيارات الصفية</div>
+        <div style="font-size:15px;">مدرسة جدحفص الثانوية للبنات</div>
+        <div style="margin-top:24px; font-size:14px; color:#94a3b8;">الرجاء تسجيل الدخول من القائمة الجانبية</div>
+    </div>""", unsafe_allow_html=True)
     st.stop()
 
 allowed_dept = st.session_state["allowed_dept"]
 
+# Sidebar nav
+st.sidebar.markdown("---")
+dept_label = "🛡️ مدير النظام" if allowed_dept == "الكل" else f"🏫 {allowed_dept}"
+st.sidebar.markdown(f"<div style='color:#7eb3f7; font-size:14px; font-weight:700; margin-bottom:8px'>{dept_label}</div>", unsafe_allow_html=True)
+
+page = st.sidebar.radio("", ["📊 لوحة التحليل", "📝 إدخال زيارة صفية"], label_visibility="collapsed")
+st.sidebar.markdown("---")
 if st.sidebar.button("🚪 تسجيل الخروج"):
-    st.session_state["logged_in"] = False
-    st.session_state["allowed_dept"] = None
+    st.session_state.update({"logged_in": False, "allowed_dept": None})
     st.rerun()
 
-page = st.sidebar.radio(
-    "القائمة",
-    ["لوحة التحليل", "إدخال زيارة صفية"]
-)
+# Page Header
+page_titles = {
+    "📊 لوحة التحليل": ("📊 لوحة التحليل التفاعلية", "تحليل شامل لبيانات الزيارات الصفية"),
+    "📝 إدخال زيارة صفية": ("📝 استمارة الزيارة الصفية", "تسجيل بيانات زيارة أو تقييم ذاتي"),
+}
+ptitle, psub = page_titles.get(page, ("", ""))
 
+if page == "📊 لوحة التحليل":
+    st.markdown(f"""
+    <div class="page-header">
+        <div>
+            <div class="page-header-title">{ptitle}</div>
+            <div class="page-header-sub">{psub}</div>
+        </div>
+        <div class="page-header-badge">{dept_label}</div>
+    </div>""", unsafe_allow_html=True)
+
+# Load data
 try:
     teachers_df = get_sheet_data("Teachers")
 except Exception as e:
-    st.error("حدث خطأ في تحميل بيانات المعلمات من Google Sheet")
+    st.error("⚠️ تعذّر تحميل بيانات المعلمات")
     st.write(e)
     st.stop()
 
-if page == "إدخال زيارة صفية":
+# Route
+if page == "📝 إدخال زيارة صفية":
     show_form(teachers_df, allowed_dept)
-
 else:
-    st.markdown("## 📊 لوحة التحليل")
-
     try:
         visits_df = get_sheet_data("Classroom_Visits")
         visits_df.columns = [str(c).strip() for c in visits_df.columns]
         show_analysis(visits_df, allowed_dept)
     except Exception as e:
-        st.error("حدث خطأ في تحميل بيانات الزيارات من Google Sheet")
+        st.error("⚠️ تعذّر تحميل بيانات الزيارات")
         st.write(e)
 
+# Footer
 st.markdown("""
-<hr style="margin-top:40px;">
-<div class="footer-box">
-<div>مديرة المدرسة: أ. خلود يعقوب</div>
-<div>المديرة المساعدة: أ. سامية سلمان</div>
-<div>تصميم وبرمجة: أ. عفاف حسين</div>
+<div class="footer">
+    <span>مديرة المدرسة: <span class="highlight">أ. خلود يعقوب</span></span>
+    <span>المديرة المساعدة: <span class="highlight">أ. سامية سلمان</span></span>
+    <span>تصميم وبرمجة: <span class="highlight">أ. عفاف حسين</span></span>
 </div>
 """, unsafe_allow_html=True)

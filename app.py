@@ -770,7 +770,7 @@ def show_form(teachers_df, allowed_dept):
 
     with c1:
         if allowed_dept == "الكل":
-            selected_dept = st.selectbox("القسم الأكاديمي", departments)
+            selected_dept = st.selectbox("القسم الأكاديمي", departments, key="f_dept")
         else:
             selected_dept = allowed_dept
             st.info(f"🏫 القسم: **{selected_dept}**")
@@ -781,17 +781,17 @@ def show_form(teachers_df, allowed_dept):
     filtered_teachers = sorted([n for n in filtered_teachers if n and n.lower() != "nan"])
 
     with c2:
-        teacher_name = st.selectbox("اسم المعلمة", filtered_teachers) if filtered_teachers else st.text_input("اسم المعلمة")
+        teacher_name = st.selectbox("اسم المعلمة", filtered_teachers, key="f_teacher") if filtered_teachers else st.text_input("اسم المعلمة", key="f_teacher")
     with c3:
-        visit_type = st.selectbox("نوع / جهة الزيارة", VISITOR_TYPES)
+        visit_type = st.selectbox("نوع / جهة الزيارة", VISITOR_TYPES, key="f_visit_type")
 
     c4, c5, c6 = st.columns(3)
     with c4:
-        school_year = st.selectbox("السنة الدراسية", ["2024-2025","2025-2026","2026-2027"])
+        school_year = st.selectbox("السنة الدراسية", ["2024-2025","2025-2026","2026-2027"], key="f_year")
     with c5:
-        semester = st.selectbox("الفصل الدراسي", ["الفصل الدراسي الأول","الفصل الدراسي الثاني"])
+        semester = st.selectbox("الفصل الدراسي", ["الفصل الدراسي الأول","الفصل الدراسي الثاني"], key="f_semester")
     with c6:
-        month = st.selectbox("الشهر", MONTHS)
+        month = st.selectbox("الشهر", MONTHS, key="f_month")
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -840,31 +840,31 @@ def show_form(teachers_df, allowed_dept):
     if is_self:
         c1, c2 = st.columns(2)
         with c1:
-            strengths  = st.text_area("✅ نقاط القوة في أدائي العام", height=100)
-            support    = st.text_area("🤝 الدعم المطلوب من زيارات القيادة الوسطى", height=100)
+            strengths  = st.text_area("✅ نقاط القوة في أدائي العام", height=100, key="f_strengths")
+            support    = st.text_area("🤝 الدعم المطلوب من زيارات القيادة الوسطى", height=100, key="f_support")
         with c2:
-            weaknesses  = st.text_area("⚠️ نقاط الضعف التي تحتاج إلى تطوير", height=100)
-            suggestions = st.text_area("💡 مقترحاتي لتطوير أدائي", height=100)
+            weaknesses  = st.text_area("⚠️ نقاط الضعف التي تحتاج إلى تطوير", height=100, key="f_weaknesses")
+            suggestions = st.text_area("💡 مقترحاتي لتطوير أدائي", height=100, key="f_suggestions")
 
     elif is_peer:
         c1, c2 = st.columns(2)
         with c1:
-            visiting_teacher = st.text_input("👩‍🏫 المعلمة الزائرة")
-            visiting_dept    = st.text_input("🏫 قسم المعلمة الزائرة")
-            visiting_school  = st.text_input("🏛️ مدرسة المعلمة الزائرة")
+            visiting_teacher = st.text_input("👩‍🏫 المعلمة الزائرة", key="f_visiting_teacher")
+            visiting_dept    = st.text_input("🏫 قسم المعلمة الزائرة", key="f_visiting_dept")
+            visiting_school  = st.text_input("🏛️ مدرسة المعلمة الزائرة", key="f_visiting_school")
         with c2:
-            visited_school = st.text_input("🏛️ مدرسة المعلمة المزورة")
-        lesson_goals      = st.text_area("🎯 الأهداف التعليمية للحصة", height=80)
-        observed_strats   = st.text_area("📖 أساليب واستراتيجيات التدريس الملحوظة", height=80)
-        useful_practices  = st.text_area("💡 ما الذي يمكن أن أستفيد منه لتطوير ممارساتي", height=80)
-        new_ideas         = st.text_area("🚀 أفكار جديدة يمكن أن أستفيد منها", height=80)
-        recommendations   = st.text_area("📋 توصيات المعلمة المزورة", height=80)
+            visited_school = st.text_input("🏛️ مدرسة المعلمة المزورة", key="f_visited_school")
+        lesson_goals      = st.text_area("🎯 الأهداف التعليمية للحصة", height=80, key="f_lesson_goals")
+        observed_strats   = st.text_area("📖 أساليب واستراتيجيات التدريس الملحوظة", height=80, key="f_observed_strats")
+        useful_practices  = st.text_area("💡 ما الذي يمكن أن أستفيد منه لتطوير ممارساتي", height=80, key="f_useful_practices")
+        new_ideas         = st.text_area("🚀 أفكار جديدة يمكن أن أستفيد منها", height=80, key="f_new_ideas")
+        recommendations   = st.text_area("📋 توصيات المعلمة المزورة", height=80, key="f_recommendations")
     else:
         c1, c2 = st.columns(2)
         with c1:
-            strengths    = st.text_area("✅ نجاحات المعلمة", height=120)
+            strengths    = st.text_area("✅ نجاحات المعلمة", height=120, key="f_strengths")
         with c2:
-            improvements = st.text_area("📈 جوانب بحاجة إلى تطوير", height=120)
+            improvements = st.text_area("📈 جوانب بحاجة إلى تطوير", height=120, key="f_improvements")
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -875,10 +875,10 @@ def show_form(teachers_df, allowed_dept):
     if st.session_state.get("save_success"):
         st.success("✅ تم حفظ السجل بنجاح!")
         if st.button("🔄 تسجيل زيارة جديدة"):
-            # امسح كل قيم البنود والفورم من session_state
-            keys_to_delete = [k for k in st.session_state.keys() 
-                              if k.startswith("item_") or k == "save_success"]
-            for k in keys_to_delete:
+            # امسح كل مفاتيح الفورم من session_state
+            form_keys = [k for k in st.session_state.keys() 
+                         if k.startswith("item_") or k.startswith("f_") or k == "save_success"]
+            for k in form_keys:
                 del st.session_state[k]
             st.session_state["cache_needs_clear"] = True
             st.rerun()

@@ -839,39 +839,67 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
         story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#dbeafe")))
         story.append(Paragraph(ar("تفصيل البنود الـ 18"), S["h2"]))
 
+        # جدول تفصيلي للبنود: لكل بند يظهر عدد الزيارات/السجلات في كل حكم
+        small_hdr = ParagraphStyle("small_hdr", fontName=_reg_bold, fontSize=7.2, alignment=TA_CENTER, leading=9, textColor=colors.white)
+        small_cell = ParagraphStyle("small_cell", fontName=_reg_font, fontSize=7.4, alignment=TA_RIGHT, leading=9.2)
+        small_num = ParagraphStyle("small_num", fontName=_reg_bold, fontSize=7.4, alignment=TA_CENTER, leading=9.2)
+
         item_rows = [[
-            Paragraph(ar("الحكم"),    S["tbl_hdr"]),
-            Paragraph(ar("النسبة %"), S["tbl_hdr"]),
-            Paragraph(ar("البند"),    S["tbl_hdr"]),
-            Paragraph(ar("#"),        S["tbl_hdr"]),
+            Paragraph(ar("الحكم العام"), small_hdr),
+            Paragraph(ar("النسبة"), small_hdr),
+            Paragraph(ar("المجموع"), small_hdr),
+            Paragraph(ar("يفي جزئياً"), small_hdr),
+            Paragraph(ar("يفي"), small_hdr),
+            Paragraph(ar("يتجاوز"), small_hdr),
+            Paragraph(ar("يتجاوز بكثير"), small_hdr),
+            Paragraph(ar("البند"), small_hdr),
+            Paragraph(ar("#"), small_hdr),
         ]]
         item_colors_map = []
         for i in range(1, 19):
             col_i = f"بند {i}"
             if col_i in filtered_df.columns:
-                vals_i = filtered_df[col_i].map(JUDGMENT_WEIGHTS).dropna().tolist()
+                vals_raw = filtered_df[col_i].dropna().astype(str).str.strip()
+                vals_i = vals_raw.map(JUDGMENT_WEIGHTS).dropna().tolist()
                 if vals_i:
+                    counts_i = vals_raw.value_counts()
+                    c_partial = int(counts_i.get("يفي بالتوقعات جزئياً", 0))
+                    c_meets = int(counts_i.get("يفي بالتوقعات", 0))
+                    c_exceeds = int(counts_i.get("يتجاوز التوقعات", 0))
+                    c_exceeds_much = int(counts_i.get("يتجاوز التوقعات بكثير", 0))
+                    total_i = c_partial + c_meets + c_exceeds + c_exceeds_much
                     ip = round((sum(vals_i)/(len(vals_i)*4))*100, 1)
                     ji = get_general_judgment(ip)
                     jc = JCOLORS.get(ji, colors.HexColor("#2563eb"))
                     item_rows.append([
-                        Paragraph(ar(ji),  S["tbl_cell"]),
-                        Paragraph(ar(f"{ip}%"), S["tbl_num"]),
-                        Paragraph(ar(ITEM_NAMES.get(i, f"بند {i}")), S["tbl_cell"]),
-                        Paragraph(ar(str(i)), S["tbl_num"]),
+                        Paragraph(ar(ji), small_cell),
+                        Paragraph(ar(f"{ip}%"), small_num),
+                        Paragraph(ar(str(total_i)), small_num),
+                        Paragraph(ar(str(c_partial)), small_num),
+                        Paragraph(ar(str(c_meets)), small_num),
+                        Paragraph(ar(str(c_exceeds)), small_num),
+                        Paragraph(ar(str(c_exceeds_much)), small_num),
+                        Paragraph(ar(ITEM_NAMES.get(i, f"بند {i}")), small_cell),
+                        Paragraph(ar(str(i)), small_num),
                     ])
                     item_colors_map.append(jc)
 
-        itm_tbl = Table(item_rows, colWidths=[3.5*cm, 2*cm, 8.5*cm, 1.5*cm])
+        itm_tbl = Table(item_rows, colWidths=[2.25*cm, 1.25*cm, 1.15*cm, 1.15*cm, 1.0*cm, 1.15*cm, 1.35*cm, 5.15*cm, 0.65*cm], repeatRows=1)
         itm_style = [
             ("BACKGROUND",   (0,0), (-1, 0), colors.HexColor("#0f2044")),
             ("TEXTCOLOR",    (0,0), (-1, 0), colors.white),
             ("ROWBACKGROUNDS",(0,1),(-1,-1),[colors.white, colors.HexColor("#f8fafc")]),
             ("BOX",          (0,0), (-1,-1), 0.5, colors.HexColor("#e5e7eb")),
-            ("INNERGRID",    (0,0), (-1,-1), 0.5, colors.HexColor("#e5e7eb")),
-            ("TOPPADDING",   (0,0), (-1,-1), 5),
-            ("BOTTOMPADDING",(0,0), (-1,-1), 5),
+            ("INNERGRID",    (0,0), (-1,-1), 0.35, colors.HexColor("#e5e7eb")),
+            ("TOPPADDING",   (0,0), (-1,-1), 3),
+            ("BOTTOMPADDING",(0,0), (-1,-1), 3),
+            ("LEFTPADDING",  (0,0), (-1,-1), 3),
+            ("RIGHTPADDING", (0,0), (-1,-1), 3),
             ("VALIGN",       (0,0), (-1,-1), "MIDDLE"),
+            ("BACKGROUND",   (3,1), (3,-1), colors.HexColor("#fce7f3")),
+            ("BACKGROUND",   (4,1), (4,-1), colors.HexColor("#fef3c7")),
+            ("BACKGROUND",   (5,1), (5,-1), colors.HexColor("#dbeafe")),
+            ("BACKGROUND",   (6,1), (6,-1), colors.HexColor("#d1fae5")),
         ]
         for ri, jc in enumerate(item_colors_map, start=1):
             itm_style.append(("TEXTCOLOR", (0, ri), (0, ri), jc))

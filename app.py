@@ -29,16 +29,16 @@ if PDF_READY:
     _font_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
     os.makedirs(_font_dir, exist_ok=True)
 
-    _font_r_path = os.path.join(_font_dir, "Tajawal-Regular.ttf")
-    _font_b_path = os.path.join(_font_dir, "Tajawal-Bold.ttf")
+    _font_r_path = os.path.join(_font_dir, "Amiri-Regular.ttf")
+    _font_b_path = os.path.join(_font_dir, "Amiri-Bold.ttf")
 
     # تحميل الخطوط تلقائياً إذا غير موجودة
     if not os.path.exists(_font_r_path) or not os.path.exists(_font_b_path):
         try:
             import urllib.request
-            _base = "https://raw.githubusercontent.com/google/fonts/main/ofl/tajawal/"
-            urllib.request.urlretrieve(_base + "Tajawal-Regular.ttf", _font_r_path)
-            urllib.request.urlretrieve(_base + "Tajawal-Bold.ttf",    _font_b_path)
+            _base = "https://raw.githubusercontent.com/alif-type/amiri/master/"
+            urllib.request.urlretrieve(_base + "Amiri-Regular.ttf", _font_r_path)
+            urllib.request.urlretrieve(_base + "Amiri-Bold.ttf",    _font_b_path)
         except Exception:
             pass
 
@@ -50,13 +50,13 @@ if PDF_READY:
         "/usr/share/fonts/truetype",
     ]
     for _fd in _font_candidates:
-        _r = os.path.join(_fd, "Tajawal-Regular.ttf")
-        _b = os.path.join(_fd, "Tajawal-Bold.ttf")
+        _r = os.path.join(_fd, "Amiri-Regular.ttf")
+        _b = os.path.join(_fd, "Amiri-Bold.ttf")
         if os.path.exists(_r) and os.path.exists(_b):
             try:
-                pdfmetrics.registerFont(TTFont("TajawalPDF", _r))
-                pdfmetrics.registerFont(TTFont("TajawalPDF-Bold", _b))
-                _reg_font, _reg_bold = "TajawalPDF", "TajawalPDF-Bold"
+                pdfmetrics.registerFont(TTFont("AmiriPDF", _r))
+                pdfmetrics.registerFont(TTFont("AmiriPDF-Bold", _b))
+                _reg_font, _reg_bold = "AmiriPDF", "AmiriPDF-Bold"
             except Exception:
                 pass
             break

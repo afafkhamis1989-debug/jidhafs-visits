@@ -8,8 +8,9 @@ import math
 import os
 import sys
 import subprocess
+import time
 
-PATCH_VERSION = "REAL8_VISIT_COMPLIANCE_TEACHERS_REFERENCE"
+PATCH_VERSION = "REAL10_FORCE_REFRESH_NEW_RESPONSES"
 
 # ✅ PATCH_VERSION: 2026-06-28_REAL_FIX_HTML_MONTHLY_PDF_NOTES_SUPPORT_SELF_ONLY_REAL2
 # ✅ REAL2: notes are filtered by record type; support/proposals only from self-evaluation rows
@@ -546,17 +547,23 @@ def guess_ms_forms_download_urls(url):
     return [base]
 
 
-@st.cache_data(ttl=120, show_spinner=False)
-def load_excel_from_url(url):
+@st.cache_data(ttl=10, show_spinner=False)
+def load_excel_from_url(url, refresh_token=0):
     last_error = None
     session = requests.Session()
     session.headers.update({
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36",
         "Accept": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,*/*",
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
     })
     for test_url in guess_ms_forms_download_urls(url):
         try:
-            res = session.get(test_url, timeout=40, allow_redirects=True)
+            # نضيف رقم تحديث للرابط حتى لا يرجع SharePoint/Streamlit نسخة مخزنة قديمة
+            joiner = "&" if "?" in test_url else "?"
+            fresh_url = f"{test_url}{joiner}_cb={refresh_token or int(time.time())}"
+            res = session.get(fresh_url, timeout=40, allow_redirects=True)
             res.raise_for_status()
             content_type = res.headers.get("content-type", "").lower()
             if "text/html" in content_type and b"<html" in res.content[:500].lower():
@@ -568,8 +575,8 @@ def load_excel_from_url(url):
     raise RuntimeError(last_error or "تعذّر تحميل ملف Excel من الرابط.")
 
 
-@st.cache_data(ttl=120, show_spinner=False)
-def load_excel_from_upload(uploaded_file):
+@st.cache_data(ttl=10, show_spinner=False)
+def load_excel_from_upload(uploaded_file, refresh_token=0):
     return pd.read_excel(uploaded_file, sheet_name="Main")
 
 
@@ -712,16 +719,16 @@ def get_excel_url():
         return DEFAULT_EXCEL_URL
 
 
-def get_forms_data(uploaded_file=None):
+def get_forms_data(uploaded_file=None, refresh_token=0):
     if uploaded_file is not None:
-        raw = load_excel_from_upload(uploaded_file)
+        raw = load_excel_from_upload(uploaded_file, refresh_token)
     else:
-        raw = load_excel_from_url(get_excel_url())
+        raw = load_excel_from_url(get_excel_url(), refresh_token)
     return standardize_ms_forms_dataframe(raw)
 
 
-@st.cache_data(ttl=300, show_spinner=False)
-def load_teachers_reference():
+@st.cache_data(ttl=30, show_spinner=False)
+def load_teachers_reference(refresh_token=0):
     """قراءة قائمة الكادر المرجعية من ملف Teachers حتى لا تعتمد المتابعة على أسماء الزيارات فقط."""
     errors = []
     base_dir = _safe_base_dir()
@@ -742,7 +749,7 @@ def load_teachers_reference():
 
     # ثانياً: محاولة قراءة Google Sheet إذا كان يسمح بالتصدير
     try:
-        res = requests.get(TEACHERS_GOOGLE_SHEET_EXPORT_URL, timeout=25)
+        res = requests.get(f"{TEACHERS_GOOGLE_SHEET_EXPORT_URL}&_cb={refresh_token or int(time.time())}", timeout=25)
         res.raise_for_status()
         raw = pd.read_excel(BytesIO(res.content), sheet_name=TEACHERS_REFERENCE_SHEET)
         return standardize_teachers_reference(raw)
@@ -803,8 +810,8 @@ def standardize_exceptions_reference(raw_df):
     return out.reset_index(drop=True)
 
 
-@st.cache_data(ttl=300, show_spinner=False)
-def load_exceptions_reference():
+@st.cache_data(ttl=30, show_spinner=False)
+def load_exceptions_reference(refresh_token=0):
     """قراءة الاستثناءات من تبويب Exceptions إن وجد، وإلا يرجع جدول فارغ."""
     base_dir = _safe_base_dir()
     local_candidates = [
@@ -820,7 +827,7 @@ def load_exceptions_reference():
         except Exception:
             pass
     try:
-        res = requests.get(TEACHERS_GOOGLE_SHEET_EXPORT_URL, timeout=25)
+        res = requests.get(f"{TEACHERS_GOOGLE_SHEET_EXPORT_URL}&_cb={refresh_token or int(time.time())}", timeout=25)
         res.raise_for_status()
         raw = pd.read_excel(BytesIO(res.content), sheet_name=EXCEPTIONS_REFERENCE_SHEET)
         return standardize_exceptions_reference(raw)
@@ -2848,9 +2855,18 @@ st.markdown(f"""
 </div>""", unsafe_allow_html=True)
 
 st.sidebar.markdown("---")
-if st.sidebar.button("🔄 تحديث البيانات"):
+if "data_refresh_token" not in st.session_state:
+    st.session_state["data_refresh_token"] = int(time.time())
+
+if st.sidebar.button("🔄 تحديث البيانات من المصدر"):
     st.cache_data.clear()
+    st.session_state["data_refresh_token"] = int(time.time())
+    # نحذف ملفات PDF المولدة حتى لا تبقى مرتبطة بالبيانات القديمة
+    st.session_state["pdf_summary_bytes"] = None
+    st.session_state["pdf_detailed_bytes"] = None
     st.rerun()
+
+st.sidebar.caption(f"آخر تحديث للبيانات: {time.strftime('%H:%M:%S', time.localtime(st.session_state['data_refresh_token']))}")
 
 uploaded_excel = st.sidebar.file_uploader(
     "رفع ملف Excel بديل عند تعذر قراءة SharePoint",
@@ -2860,7 +2876,7 @@ uploaded_excel = st.sidebar.file_uploader(
 
 try:
     with st.spinner("جاري تحميل بيانات Microsoft Forms..."):
-        visits_df = get_forms_data(uploaded_excel)
+        visits_df = get_forms_data(uploaded_excel, st.session_state.get("data_refresh_token", 0))
     show_analysis(visits_df, allowed_dept)
 except Exception as e:
     st.error("⚠️ تعذّر تحميل بيانات الزيارات.")

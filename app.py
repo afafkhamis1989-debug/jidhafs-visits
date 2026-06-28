@@ -26,14 +26,29 @@ except ImportError:
 
 # تسجيل خطوط عربية (يعمل مرة واحدة)
 if PDF_READY:
-    _font_dir = os.path.join(os.path.dirname(__file__), "fonts")
+    _font_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
+    os.makedirs(_font_dir, exist_ok=True)
+
+    _font_r_path = os.path.join(_font_dir, "Tajawal-Regular.ttf")
+    _font_b_path = os.path.join(_font_dir, "Tajawal-Bold.ttf")
+
+    # تحميل الخطوط تلقائياً إذا غير موجودة
+    if not os.path.exists(_font_r_path) or not os.path.exists(_font_b_path):
+        try:
+            import urllib.request
+            _base = "https://raw.githubusercontent.com/google/fonts/main/ofl/tajawal/"
+            urllib.request.urlretrieve(_base + "Tajawal-Regular.ttf", _font_r_path)
+            urllib.request.urlretrieve(_base + "Tajawal-Bold.ttf",    _font_b_path)
+        except Exception:
+            pass
+
+    _reg_font = None
+    _reg_bold = None
     _font_candidates = [
         _font_dir,
         "/home/claude/fonts",
         "/usr/share/fonts/truetype",
     ]
-    _reg_font = None
-    _reg_bold = None
     for _fd in _font_candidates:
         _r = os.path.join(_fd, "Tajawal-Regular.ttf")
         _b = os.path.join(_fd, "Tajawal-Bold.ttf")
@@ -577,9 +592,10 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
         return get_display(reshaped)
 
     # مسار الشعار — يبحث بجانب الملف أولاً ثم المجلد المعروف
+    _base_dir = os.path.dirname(os.path.abspath(__file__))
     _header_candidates = [
-        os.path.join(os.path.dirname(__file__), "header.png"),
-        os.path.join(os.path.dirname(__file__), "fonts", "header.png"),
+        os.path.join(_base_dir, "header.png"),
+        os.path.join(_base_dir, "fonts", "header.png"),
         "/home/claude/fonts/header.png",
     ]
     _header_img = next((p for p in _header_candidates if os.path.exists(p)), None)

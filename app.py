@@ -9,23 +9,27 @@ import os
 import sys
 import subprocess
 
-# ── تثبيت مكتبات PDF تلقائياً إذا غير موجودة ─────────────────────────────
-def _ensure_pdf_libs():
+# ── تثبيت مكتبات PDF ─────────────────────────────────────────────────────────
+@st.cache_resource
+def install_pdf_libs():
+    pkgs = []
     try:
-        import reportlab, arabic_reshaper, bidi
-        return True
+        import reportlab
     except ImportError:
-        try:
-            subprocess.check_call([
-                sys.executable, "-m", "pip", "install",
-                "reportlab", "arabic-reshaper", "python-bidi",
-                "--quiet", "--no-warn-script-location"
-            ])
-            return True
-        except Exception:
-            return False
+        pkgs.append("reportlab")
+    try:
+        import arabic_reshaper
+    except ImportError:
+        pkgs.append("arabic-reshaper")
+    try:
+        import bidi
+    except ImportError:
+        pkgs.append("python-bidi")
+    if pkgs:
+        subprocess.check_call([sys.executable, "-m", "pip", "install"] + pkgs + ["--quiet"])
+    return True
 
-_ensure_pdf_libs()
+install_pdf_libs()
 
 # ── PDF — استيراد بعد التثبيت مباشرة ────────────────────────────────────────
 PDF_READY = False
@@ -43,25 +47,8 @@ try:
     import arabic_reshaper
     from bidi.algorithm import get_display
     PDF_READY = True
-except ImportError:
-    # حاول مرة ثانية بعد التثبيت
-    try:
-        _ensure_pdf_libs()
-        from reportlab.lib.pagesizes import A4
-        from reportlab.lib import colors
-        from reportlab.lib.units import cm
-        from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
-                                        Table, TableStyle, HRFlowable,
-                                        BaseDocTemplate, Frame, PageTemplate)
-        from reportlab.lib.styles import ParagraphStyle
-        from reportlab.lib.enums import TA_RIGHT, TA_CENTER
-        from reportlab.pdfbase import pdfmetrics
-        from reportlab.pdfbase.ttfonts import TTFont
-        import arabic_reshaper
-        from bidi.algorithm import get_display
-        PDF_READY = True
-    except Exception:
-        PDF_READY = False
+except Exception:
+    PDF_READY = False
 
 # تسجيل خطوط عربية (يعمل مرة واحدة)
 if PDF_READY:

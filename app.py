@@ -898,8 +898,8 @@ def show_analysis(df, allowed_dept):
         # شرح المنهجية
 
 
-        # ── الرسم البياني: نسبة الأداء فقط (للمقارنة البصرية) ─────────────
-        ddf_chart = ddf.sort_values("نسبة الأداء %", ascending=True)
+        # ── الرسم البياني مرتّب حسب النقاط المركّبة ─────────────────────────
+        ddf_chart = ddf.sort_values("النقاط المركّبة", ascending=True)
         colors_dept = [JUDGMENT_COLORS.get(get_general_judgment(p), "#2563eb") for p in ddf_chart["نسبة الأداء %"]]
         fig_d = make_rtl_bar_h(
             ddf_chart["القسم"].tolist(),

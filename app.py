@@ -669,6 +669,90 @@ def show_analysis(df, allowed_dept):
                 </div>
                 """, unsafe_allow_html=True)
 
+    # ── 2b. رادار شارت للمجالات ───────────────────────────────────────────────
+    if domains_result and len(domains_result) >= 3:
+        section_title("🕸️", "الرادار البياني للمجالات")
+        radar_df = pd.DataFrame(domains_result)
+        categories = radar_df["المجال"].tolist()
+        values     = radar_df["النسبة"].tolist()
+        # نغلق الشكل بإعادة أول قيمة
+        categories_closed = categories + [categories[0]]
+        values_closed     = values     + [values[0]]
+
+        import math
+        n = len(categories)
+        angles = [math.pi/2 - 2*math.pi*i/n for i in range(n)]
+        angles_closed = angles + [angles[0]]
+
+        # تحويل من قطبي إلى ديكارتي
+        r_max = 100
+        xs = [v/r_max * math.cos(a) for v, a in zip(values_closed, angles_closed)]
+        ys = [v/r_max * math.sin(a) for v, a in zip(values_closed, angles_closed)]
+
+        # شبكة الخلفية
+        grid_levels = [25, 50, 75, 100]
+        fig_r = go.Figure()
+
+        for gl in grid_levels:
+            gxs = [gl/r_max * math.cos(a) for a in angles_closed]
+            gys = [gl/r_max * math.sin(a) for a in angles_closed]
+            fig_r.add_trace(go.Scatter(
+                x=gxs, y=gys, mode="lines",
+                line=dict(color="#e5e7eb", width=1),
+                showlegend=False, hoverinfo="skip"
+            ))
+            fig_r.add_annotation(
+                x=0, y=gl/r_max + 0.03,
+                text=f"{gl}%", showarrow=False,
+                font=dict(size=10, color="#9ca3af", family="Tajawal")
+            )
+
+        # خطوط المحاور
+        for i in range(n):
+            fig_r.add_trace(go.Scatter(
+                x=[0, math.cos(angles[i])],
+                y=[0, math.sin(angles[i])],
+                mode="lines",
+                line=dict(color="#e5e7eb", width=1),
+                showlegend=False, hoverinfo="skip"
+            ))
+
+        # المنطقة الملونة
+        fig_r.add_trace(go.Scatter(
+            x=xs, y=ys, mode="lines+markers",
+            fill="toself",
+            fillcolor="rgba(37,99,235,0.15)",
+            line=dict(color="#2563eb", width=2.5),
+            marker=dict(size=8, color="#2563eb"),
+            showlegend=False,
+            hovertemplate=[f"{cat}<br>{val}%<extra></extra>"
+                           for cat, val in zip(categories_closed, values_closed)],
+        ))
+
+        # تسميات المحاور
+        label_r = 1.18
+        for i, (cat, val) in enumerate(zip(categories, values)):
+            lx = label_r * math.cos(angles[i])
+            ly = label_r * math.sin(angles[i])
+            color = JUDGMENT_COLORS.get(get_general_judgment(val), "#2563eb")
+            fig_r.add_annotation(
+                x=lx, y=ly,
+                text=f"<b>{DOMAIN_ICONS.get(cat,'')} {cat}</b><br><span style='color:{color}'>{val}%</span>",
+                showarrow=False,
+                font=dict(size=12, family="Tajawal"),
+                align="center",
+            )
+
+        fig_r.update_layout(
+            xaxis=dict(visible=False, range=[-1.45, 1.45]),
+            yaxis=dict(visible=False, range=[-1.45, 1.45], scaleanchor="x"),
+            plot_bgcolor="white", paper_bgcolor="white",
+            margin=dict(l=60, r=60, t=40, b=40),
+            height=460,
+            font=dict(family="Tajawal"),
+        )
+        st.plotly_chart(fig_r, use_container_width=True)
+
     # ── 3. ITEMS ─────────────────────────────────────────────────────────────
     section_title("📌", "تفصيل البنود الـ 18")
 
@@ -963,9 +1047,12 @@ def show_analysis(df, allowed_dept):
         monthly_data = []
         for m, grp in filtered.groupby("الشهر"):
             mp = calculate_percentage(grp)
-            monthly_data.append({"الشهر": m, "النسبة": mp, "الترتيب": months_order.get(m, 99)})
+            monthly_data.append({"الشهر": m, "النسبة": mp, "الترتيب": months_order.get(str(m).strip(), 99)})
 
         mdf = pd.DataFrame(monthly_data).sort_values("الترتيب")
+        # قائمة الأشهر الموجودة فقط بترتيبها الدراسي الصحيح
+        ordered_months = [m for m in MONTHS if m in mdf["الشهر"].values]
+
         if len(mdf) > 1:
             fig_line = go.Figure()
             fig_line.add_trace(go.Scatter(
@@ -981,11 +1068,14 @@ def show_analysis(df, allowed_dept):
                 textposition="top center",
                 textfont=dict(size=13, family="Tajawal", color="#111827"),
             ))
-            # خط الهدف 75%
             fig_line.add_hline(y=75, line_dash="dash", line_color="#10b981", line_width=1.5,
                                annotation_text="هدف 75%", annotation_position="left")
             fig_line.update_layout(
-                xaxis=dict(tickfont=dict(size=12, family="Tajawal")),
+                xaxis=dict(
+                    tickfont=dict(size=12, family="Tajawal"),
+                    categoryorder="array",          # ✅ ترتيب يدوي صريح
+                    categoryarray=ordered_months,   # ✅ من سبتمبر → يونيو
+                ),
                 yaxis=dict(range=[0, 115], showgrid=True, gridcolor="#f0f4f8"),
                 plot_bgcolor="white", paper_bgcolor="white",
                 margin=dict(l=10, r=10, t=20, b=10),
@@ -994,7 +1084,190 @@ def show_analysis(df, allowed_dept):
             )
             st.plotly_chart(fig_line, use_container_width=True)
 
-    # ── 8. TEXT NOTES ─────────────────────────────────────────────────────────
+    # ── 8. مقارنة الفصلين ────────────────────────────────────────────────────
+    if "الفصل الدراسي" in df.columns and df["الفصل الدراسي"].nunique() >= 2:
+        sems_available = df["الفصل الدراسي"].dropna().astype(str).unique().tolist()
+        if len(sems_available) >= 2:
+            section_title("📊", "مقارنة الفصلين الدراسيين")
+
+            # نأخذ البيانات من df الكامل (بدون فلتر الفصل) لكن مع الفلاتر الأخرى
+            df_compare = df.copy()
+            if allowed_dept != "الكل":
+                df_compare = df_compare[df_compare["القسم الأكاديمي"].apply(normalize_text) == normalize_text(allowed_dept)]
+
+            sem_results = []
+            domain_by_sem = {}
+            for sem, grp in df_compare.groupby("الفصل الدراسي"):
+                sp = calculate_percentage(grp)
+                sem_results.append({"الفصل": str(sem), "النسبة": sp, "عدد السجلات": len(grp)})
+                # نسب المجالات لكل فصل
+                for domain, items in ITEMS_STRUCTURE.items():
+                    dcols = [f"بند {n}" for n, _ in items if f"بند {n}" in grp.columns]
+                    vals = []
+                    for dc in dcols:
+                        vals.extend(grp[dc].map(JUDGMENT_WEIGHTS).dropna().tolist())
+                    dp2 = round((sum(vals)/(len(vals)*4))*100, 1) if vals else 0
+                    if sem not in domain_by_sem:
+                        domain_by_sem[sem] = {}
+                    domain_by_sem[sem][domain] = dp2
+
+            if len(sem_results) >= 2:
+                col_s1, col_s2 = st.columns(2)
+                for idx, row in enumerate(sem_results):
+                    with (col_s1 if idx == 0 else col_s2):
+                        pcolor_s = percent_color(row["النسبة"])
+                        jud_s = get_general_judgment(row["النسبة"])
+                        bar_color_s = JUDGMENT_COLORS.get(jud_s, "#2563eb")
+                        st.markdown(f"""
+                        <div style="background:white; border-radius:14px; padding:20px 22px;
+                                    box-shadow:0 2px 10px rgba(0,0,0,0.06);
+                                    border-top:4px solid {bar_color_s}; margin-bottom:12px;">
+                            <div style="font-size:15px; font-weight:800; color:#0f2044; margin-bottom:8px;">
+                                📖 {row['الفصل']}
+                            </div>
+                            <div style="font-size:34px; font-weight:900; color:{bar_color_s}">{row['النسبة']}%</div>
+                            <div style="margin-top:6px">{judgment_badge(jud_s)}</div>
+                            <div style="font-size:12px; color:#6b7280; margin-top:8px">{row['عدد السجلات']} سجل</div>
+                        </div>""", unsafe_allow_html=True)
+
+                # رسم مقارنة المجالات بين الفصلين
+                sems_list = list(domain_by_sem.keys())
+                domains_list = list(ITEMS_STRUCTURE.keys())
+                if len(sems_list) >= 2:
+                    fig_sem = go.Figure()
+                    sem_colors = ["#2563eb", "#10b981"]
+                    for i, sem in enumerate(sems_list[:2]):
+                        fig_sem.add_trace(go.Bar(
+                            name=str(sem),
+                            x=domains_list,
+                            y=[domain_by_sem[sem].get(d, 0) for d in domains_list],
+                            marker_color=sem_colors[i],
+                            text=[f"{domain_by_sem[sem].get(d,0)}%" for d in domains_list],
+                            textposition="outside",
+                            textfont=dict(size=11, family="Tajawal"),
+                        ))
+                    fig_sem.update_layout(
+                        barmode="group",
+                        xaxis=dict(tickfont=dict(size=11, family="Tajawal"), tickangle=-20),
+                        yaxis=dict(range=[0, 115], showgrid=True, gridcolor="#f0f4f8"),
+                        plot_bgcolor="white", paper_bgcolor="white",
+                        legend=dict(font=dict(family="Tajawal", size=12), orientation="h", y=1.1),
+                        margin=dict(l=10, r=10, t=30, b=60),
+                        height=340,
+                        font=dict(family="Tajawal"),
+                    )
+                    st.plotly_chart(fig_sem, use_container_width=True)
+
+                    # تنبيه: هل الأداء تحسّن أو تراجع؟
+                    if len(sem_results) >= 2:
+                        diff = round(sem_results[1]["النسبة"] - sem_results[0]["النسبة"], 1)
+                        if diff > 0:
+                            st.success(f"✅ تحسّن الأداء بمقدار {diff}% من الفصل الأول إلى الثاني")
+                        elif diff < 0:
+                            st.warning(f"⚠️ تراجع الأداء بمقدار {abs(diff)}% من الفصل الأول إلى الثاني — يستوجب المتابعة")
+                        else:
+                            st.info("ℹ️ الأداء ثابت بين الفصلين")
+
+    # ── 9. تنبيهات ذكية ──────────────────────────────────────────────────────
+    section_title("🔔", "التنبيهات الذكية")
+
+    alerts = []
+
+    # تنبيه 1: أقسام/معلمات نسبتها انخفضت عن الشهر السابق
+    if "الشهر" in filtered.columns and filtered["الشهر"].nunique() >= 2:
+        months_order_a = {m: i for i, m in enumerate(MONTHS)}
+        months_sorted = sorted(filtered["الشهر"].dropna().unique(), key=lambda x: months_order_a.get(str(x), 99))
+        if len(months_sorted) >= 2:
+            last_m  = months_sorted[-1]
+            prev_m  = months_sorted[-2]
+            p_last  = calculate_percentage(filtered[filtered["الشهر"] == last_m])
+            p_prev  = calculate_percentage(filtered[filtered["الشهر"] == prev_m])
+            diff_m  = round(p_last - p_prev, 1)
+            if diff_m < 0:
+                alerts.append(("warning", f"انخفض الأداء {abs(diff_m)}% من {prev_m} إلى {last_m}"))
+            elif diff_m > 0:
+                alerts.append(("success", f"تحسّن الأداء {diff_m}% من {prev_m} إلى {last_m}"))
+
+    # تنبيه 2: بنود تحت 75%
+    weak_items = []
+    for i in range(1, 19):
+        col_i = f"بند {i}"
+        if col_i in filtered.columns:
+            vals_i = filtered[col_i].map(JUDGMENT_WEIGHTS).dropna().tolist()
+            if vals_i:
+                ip = round((sum(vals_i)/(len(vals_i)*4))*100, 1)
+                if ip < 75:
+                    weak_items.append(f"{i}. {ITEM_NAMES.get(i, f'بند {i}')} ({ip}%)")
+    if weak_items:
+        alerts.append(("danger", f"بنود أداؤها دون 75%: {' · '.join(weak_items)}"))
+
+    # تنبيه 3: معلمات بدون زيارة
+    if "نوع السجل" in df.columns and "اسم المعلمة" in df.columns:
+        scope = df if allowed_dept == "الكل" else df[df["القسم الأكاديمي"].apply(normalize_text) == normalize_text(allowed_dept)]
+        all_t_a   = scope["اسم المعلمة"].dropna().unique()
+        visited_a = scope[scope["نوع السجل"] == "زيارة صفية"]["اسم المعلمة"].dropna().unique()
+        n_no_visit = len([t for t in all_t_a if t not in visited_a])
+        if n_no_visit > 0:
+            alerts.append(("warning", f"{n_no_visit} معلمة لم تُسجَّل لهن زيارة صفية بعد"))
+
+    if alerts:
+        for atype, amsg in alerts:
+            if atype == "success":
+                st.success(f"✅ {amsg}")
+            elif atype == "warning":
+                st.warning(f"⚠️ {amsg}")
+            elif atype == "danger":
+                st.error(f"🔴 {amsg}")
+    else:
+        st.success("✅ لا توجد تنبيهات — الأداء العام ضمن المستوى المطلوب")
+
+    # ── 10. مقارنة المعلمة بمتوسط قسمها ─────────────────────────────────────
+    if "اسم المعلمة" in filtered.columns and "القسم الأكاديمي" in filtered.columns:
+        section_title("📐", "مقارنة المعلمة بمتوسط قسمها")
+
+        teacher_dept_rows = []
+        for tname, tgrp in filtered.groupby("اسم المعلمة"):
+            tp = calculate_percentage(tgrp)
+            dept_name = tgrp["القسم الأكاديمي"].iloc[0] if len(tgrp) > 0 else ""
+            dept_grp  = filtered[filtered["القسم الأكاديمي"] == dept_name]
+            dept_avg  = calculate_percentage(dept_grp)
+            diff_td   = round(tp - dept_avg, 1)
+            teacher_dept_rows.append({
+                "المعلمة": tname,
+                "القسم": dept_name,
+                "أداء المعلمة %": tp,
+                "متوسط القسم %": dept_avg,
+                "الفرق": diff_td,
+            })
+
+        tdf2 = pd.DataFrame(teacher_dept_rows).sort_values("الفرق", ascending=False)
+
+        if len(tdf2) > 1:
+            # رسم شريطي للفروقات
+            colors_diff = ["#10b981" if d >= 0 else "#f472b6" for d in tdf2["الفرق"]]
+            fig_diff = go.Figure(go.Bar(
+                x=tdf2["المعلمة"],
+                y=tdf2["الفرق"],
+                marker_color=colors_diff,
+                text=[f"{'+' if d>=0 else ''}{d}%" for d in tdf2["الفرق"]],
+                textposition="outside",
+                textfont=dict(size=11, family="Tajawal"),
+            ))
+            fig_diff.add_hline(y=0, line_color="#6b7280", line_width=1.5)
+            fig_diff.update_layout(
+                xaxis=dict(tickangle=-30, tickfont=dict(size=11, family="Tajawal")),
+                yaxis=dict(showgrid=True, gridcolor="#f0f4f8", zeroline=False),
+                plot_bgcolor="white", paper_bgcolor="white",
+                margin=dict(l=10, r=10, t=20, b=60),
+                height=320,
+                font=dict(family="Tajawal"),
+            )
+            st.plotly_chart(fig_diff, use_container_width=True)
+
+        with st.expander("📋 جدول مقارنة المعلمات بمتوسط أقسامهن"):
+            st.dataframe(tdf2, use_container_width=True, hide_index=True)
+
+    # ── 11. TEXT NOTES ────────────────────────────────────────────────────────
     text_cols = [
         "نجاحات المعلم", "جوانب بحاجة إلى تطوير",
         "نقاط القوة في أدائي العام", "نقاط الضعف التي تحتاج إلى تطوير",

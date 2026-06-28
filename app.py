@@ -9,7 +9,8 @@ import os
 import sys
 import subprocess
 
-# ✅ PATCH_VERSION: 2026-06-28_REAL_FIX_HTML_MONTHLY_PDF_NOTES_SUPPORT_SELF_ONLY
+# ✅ PATCH_VERSION: 2026-06-28_REAL_FIX_HTML_MONTHLY_PDF_NOTES_SUPPORT_SELF_ONLY_REAL2
+# ✅ REAL2: notes are filtered by record type; support/proposals only from self-evaluation rows
 
 # ── PDF — استيراد المكتبات والخط العربي تلقائياً ─────────────────────────────
 # ملاحظة:
@@ -932,12 +933,34 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
         txt = " ".join(txt.split())
         return txt
 
-    def _append_notes_section(section_name, cols, accent_hex):
+    def _note_type_masks(source_df):
+        """يفصل صفوف الملاحظات حسب نوع السجل/الزائر حتى لا تختلط حقول التقييم الذاتي مع الزيارات أو التوأمة."""
+        if source_df is None or source_df.empty:
+            empty_mask = pd.Series([False] * len(source_df), index=source_df.index)
+            return empty_mask, empty_mask, empty_mask
+        combined = pd.Series([""] * len(source_df), index=source_df.index, dtype="string")
+        for _c in ["نوع السجل", "الزائر"]:
+            if _c in source_df.columns:
+                combined = combined.fillna("") + " " + source_df[_c].fillna("").astype(str)
+        combined_norm = combined.astype(str).apply(normalize_text)
+        self_mask = combined_norm.str.contains("تقييم ذاتي|التقييم الذاتي", regex=True, na=False)
+        twin_mask = combined_norm.str.contains("توام|توأم", regex=True, na=False)
+        visit_mask = ~(self_mask | twin_mask)
+        return visit_mask, self_mask, twin_mask
+
+    pdf_visit_mask, pdf_self_mask, pdf_twin_mask = _note_type_masks(filtered_df)
+    pdf_visit_df = filtered_df[pdf_visit_mask].copy()
+    pdf_self_df = filtered_df[pdf_self_mask].copy()
+    pdf_twin_df = filtered_df[pdf_twin_mask].copy()
+
+    def _append_notes_section(section_name, source_df, cols, accent_hex):
         rows = []
+        if source_df is None or source_df.empty:
+            return
         for c in cols:
-            if c in filtered_df.columns:
+            if c in source_df.columns:
                 vals = []
-                for v in filtered_df[c].dropna().tolist():
+                for v in source_df[c].dropna().tolist():
                     t = _clean_pdf_note(v)
                     if t and t not in vals:
                         vals.append(t)
@@ -968,18 +991,18 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
         # الخلاصة المهنية تظهر دائماً في التقرير الفردي إذا كانت الحقول موجودة،
         # حتى لو كان نوع الزيارة = الكل أو كانت المعلمة لديها أكثر من نوع سجل.
         story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#dbeafe")))
-        _append_notes_section("الخلاصة المهنية - الزيارات الصفية", [
+        _append_notes_section("الخلاصة المهنية - الزيارات الصفية", pdf_visit_df, [
             "نجاحات المعلم",
             "جوانب بحاجة إلى تطوير",
         ], "#10b981")
         # التقييم الذاتي: لا يشمل حقول "أبرز نقاط القوة/أبرز الجوانب" لأنها تخص التوأمة/الملاحظات الموجهة
-        _append_notes_section("الخلاصة المهنية - التقييم الذاتي", [
+        _append_notes_section("الخلاصة المهنية - التقييم الذاتي", pdf_self_df, [
             "نقاط القوة في أدائي العام",
             "نقاط الضعف التي تحتاج إلى تطوير",
             "الدعم المطلوب من زيارات القيادة الوسطى",
             "مقترحاتي لتطوير أدائي",
         ], "#2563eb")
-        _append_notes_section("الخلاصة المهنية - التوأمة الموجهة", [
+        _append_notes_section("الخلاصة المهنية - التوأمة الموجهة", pdf_twin_df, [
             "أبرز نقاط القوة",
             "أبرز الجوانب التي تحتاج إلى تطوير",
             "الأهداف التعليمية للحصة",
@@ -989,12 +1012,14 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
             "توصيات المعلم المزور",
         ], "#7c3aed")
 
-    def _top_pdf_notes(cols, limit=8):
-        # يستخدم في تقرير الأدمن/القسم عندما لا يتم اختيار معلمة محددة.
+    def _top_pdf_notes(source_df, cols, limit=8):
+        # يستخدم في تقرير الأدمن/القسم عندما لا يتم اختيار معلمة محددة، مع فصل نوع السجل.
         freq = {}
+        if source_df is None or source_df.empty:
+            return []
         for c in cols:
-            if c in filtered_df.columns:
-                for v in filtered_df[c].dropna().tolist():
+            if c in source_df.columns:
+                for v in source_df[c].dropna().tolist():
                     t = _clean_pdf_note(v)
                     if t:
                         freq[t] = freq.get(t, 0) + 1
@@ -1017,10 +1042,10 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
             "أفكار جديدة يمكن أن أستفيد منها لتطوير ممارساتي التدريسية",
             "توصيات المعلم المزور",
         ]
-        strength_top = _top_pdf_notes(strength_cols_pdf, 8)
-        dev_top = _top_pdf_notes(dev_cols_pdf, 8)
-        self_support_top = _top_pdf_notes(self_support_cols_pdf, 8)
-        twin_top = _top_pdf_notes(twin_cols_pdf, 6)
+        strength_top = _top_pdf_notes(pdf_visit_df, strength_cols_pdf, 8)
+        dev_top = _top_pdf_notes(pdf_visit_df, dev_cols_pdf, 8)
+        self_support_top = _top_pdf_notes(pdf_self_df, self_support_cols_pdf, 8)
+        twin_top = _top_pdf_notes(pdf_twin_df, twin_cols_pdf, 6)
         if strength_top or dev_top or self_support_top or twin_top:
             story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#dbeafe")))
             story.append(Paragraph(ar("الخلاصة النوعية للإدارة"), S["h2"]))
@@ -2125,6 +2150,21 @@ def show_analysis(df, allowed_dept):
                 f"<div style='font-size:15px;font-weight:900;color:#0f2044;margin-bottom:8px;'>{title}</div>"
                 f"<ul style='margin:0;padding-right:20px;color:#374151;font-size:13px;line-height:1.8;'>{items_html}</ul></div>")
 
+    def _note_type_dataframes(source_df):
+        if source_df is None or source_df.empty:
+            return source_df.iloc[0:0].copy(), source_df.iloc[0:0].copy(), source_df.iloc[0:0].copy()
+        combined = pd.Series([""] * len(source_df), index=source_df.index, dtype="string")
+        for _c in ["نوع السجل", "الزائر"]:
+            if _c in source_df.columns:
+                combined = combined.fillna("") + " " + source_df[_c].fillna("").astype(str)
+        combined_norm = combined.astype(str).apply(normalize_text)
+        self_mask = combined_norm.str.contains("تقييم ذاتي|التقييم الذاتي", regex=True, na=False)
+        twin_mask = combined_norm.str.contains("توام|توأم", regex=True, na=False)
+        visit_mask = ~(self_mask | twin_mask)
+        return source_df[visit_mask].copy(), source_df[self_mask].copy(), source_df[twin_mask].copy()
+
+    note_visit_df, note_self_df, note_twin_df = _note_type_dataframes(filtered)
+
     note_cols_all = [
         "نجاحات المعلم", "جوانب بحاجة إلى تطوير",
         "نقاط القوة في أدائي العام", "نقاط الضعف التي تحتاج إلى تطوير",
@@ -2143,8 +2183,8 @@ def show_analysis(df, allowed_dept):
         col_visit, col_self, col_twin = st.columns(3)
         with col_visit:
             html_parts = []
-            html_parts.append(_render_note_card("💪 نجاحات المعلم", _note_values_for_dashboard(filtered, "نجاحات المعلم"), "#10b981"))
-            html_parts.append(_render_note_card("🛠️ جوانب بحاجة إلى تطوير", _note_values_for_dashboard(filtered, "جوانب بحاجة إلى تطوير"), "#f97316"))
+            html_parts.append(_render_note_card("💪 نجاحات المعلم", _note_values_for_dashboard(note_visit_df, "نجاحات المعلم"), "#10b981"))
+            html_parts.append(_render_note_card("🛠️ جوانب بحاجة إلى تطوير", _note_values_for_dashboard(note_visit_df, "جوانب بحاجة إلى تطوير"), "#f97316"))
             html = "".join([x for x in html_parts if x])
             if html:
                 st.markdown("<div style='font-weight:900;color:#0f2044;margin-bottom:8px;text-align:center;'>زيارات صفية / قيادة</div>" + html, unsafe_allow_html=True)
@@ -2152,10 +2192,10 @@ def show_analysis(df, allowed_dept):
                 st.info("لا توجد ملاحظات للزيارات الصفية حسب الفلاتر الحالية.")
         with col_self:
             html_parts = []
-            html_parts.append(_render_note_card("🌟 نقاط القوة في أدائي العام", _note_values_for_dashboard(filtered, "نقاط القوة في أدائي العام"), "#10b981"))
-            html_parts.append(_render_note_card("⚠️ نقاط الضعف التي تحتاج إلى تطوير", _note_values_for_dashboard(filtered, "نقاط الضعف التي تحتاج إلى تطوير"), "#f97316"))
-            html_parts.append(_render_note_card("🤝 الدعم المطلوب من زيارات القيادة الوسطى", _note_values_for_dashboard(filtered, "الدعم المطلوب من زيارات القيادة الوسطى"), "#3b82f6"))
-            html_parts.append(_render_note_card("💡 مقترحاتي لتطوير أدائي", _note_values_for_dashboard(filtered, "مقترحاتي لتطوير أدائي"), "#2563eb"))
+            html_parts.append(_render_note_card("🌟 نقاط القوة في أدائي العام", _note_values_for_dashboard(note_self_df, "نقاط القوة في أدائي العام"), "#10b981"))
+            html_parts.append(_render_note_card("⚠️ نقاط الضعف التي تحتاج إلى تطوير", _note_values_for_dashboard(note_self_df, "نقاط الضعف التي تحتاج إلى تطوير"), "#f97316"))
+            html_parts.append(_render_note_card("🤝 الدعم المطلوب من زيارات القيادة الوسطى", _note_values_for_dashboard(note_self_df, "الدعم المطلوب من زيارات القيادة الوسطى"), "#3b82f6"))
+            html_parts.append(_render_note_card("💡 مقترحاتي لتطوير أدائي", _note_values_for_dashboard(note_self_df, "مقترحاتي لتطوير أدائي"), "#2563eb"))
             html = "".join([x for x in html_parts if x])
             if html:
                 st.markdown("<div style='font-weight:900;color:#0f2044;margin-bottom:8px;text-align:center;'>التقييم الذاتي</div>" + html, unsafe_allow_html=True)
@@ -2163,12 +2203,12 @@ def show_analysis(df, allowed_dept):
                 st.info("لا توجد ملاحظات للتقييم الذاتي حسب الفلاتر الحالية.")
         with col_twin:
             html_parts = []
-            html_parts.append(_render_note_card("⭐ أبرز نقاط القوة", _note_values_for_dashboard(filtered, "أبرز نقاط القوة"), "#10b981"))
-            html_parts.append(_render_note_card("📌 أبرز الجوانب التي تحتاج إلى تطوير", _note_values_for_dashboard(filtered, "أبرز الجوانب التي تحتاج إلى تطوير"), "#f97316"))
-            html_parts.append(_render_note_card("🎯 الأهداف التعليمية للحصة", _note_values_for_dashboard(filtered, "الأهداف التعليمية للحصة"), "#7c3aed"))
-            html_parts.append(_render_note_card("📚 أساليب واستراتيجيات التدريس الملحوظة", _note_values_for_dashboard(filtered, "أساليب واستراتيجيات التدريس الملحوظة"), "#7c3aed"))
-            html_parts.append(_render_note_card("💡 أفكار/ممارسات مستفادة", _note_values_for_dashboard(filtered, "ما الذي يمكن أن أستفيد منه لتطوير ممارساتي التدريسية") + _note_values_for_dashboard(filtered, "أفكار جديدة يمكن أن أستفيد منها لتطوير ممارساتي التدريسية"), "#7c3aed"))
-            html_parts.append(_render_note_card("📝 توصيات المعلم المزور", _note_values_for_dashboard(filtered, "توصيات المعلم المزور"), "#7c3aed"))
+            html_parts.append(_render_note_card("⭐ أبرز نقاط القوة", _note_values_for_dashboard(note_twin_df, "أبرز نقاط القوة"), "#10b981"))
+            html_parts.append(_render_note_card("📌 أبرز الجوانب التي تحتاج إلى تطوير", _note_values_for_dashboard(note_twin_df, "أبرز الجوانب التي تحتاج إلى تطوير"), "#f97316"))
+            html_parts.append(_render_note_card("🎯 الأهداف التعليمية للحصة", _note_values_for_dashboard(note_twin_df, "الأهداف التعليمية للحصة"), "#7c3aed"))
+            html_parts.append(_render_note_card("📚 أساليب واستراتيجيات التدريس الملحوظة", _note_values_for_dashboard(note_twin_df, "أساليب واستراتيجيات التدريس الملحوظة"), "#7c3aed"))
+            html_parts.append(_render_note_card("💡 أفكار/ممارسات مستفادة", _note_values_for_dashboard(note_twin_df, "ما الذي يمكن أن أستفيد منه لتطوير ممارساتي التدريسية") + _note_values_for_dashboard(note_twin_df, "أفكار جديدة يمكن أن أستفيد منها لتطوير ممارساتي التدريسية"), "#7c3aed"))
+            html_parts.append(_render_note_card("📝 توصيات المعلم المزور", _note_values_for_dashboard(note_twin_df, "توصيات المعلم المزور"), "#7c3aed"))
             html = "".join([x for x in html_parts if x])
             if html:
                 st.markdown("<div style='font-weight:900;color:#0f2044;margin-bottom:8px;text-align:center;'>التوأمة / الملاحظات الموجهة</div>" + html, unsafe_allow_html=True)
@@ -2207,10 +2247,10 @@ def show_analysis(df, allowed_dept):
             "توصيات المعلم المزور",
         ]
 
-        strength_freq_df = _collect_note_frequency(filtered, strength_cols_admin).head(10)
-        dev_freq_df = _collect_note_frequency(filtered, dev_cols_admin).head(10)
-        self_support_freq_df = _collect_note_frequency(filtered, self_support_cols_admin).head(10)
-        twin_freq_df = _collect_note_frequency(filtered, twin_cols_admin).head(10)
+        strength_freq_df = _collect_note_frequency(note_visit_df, strength_cols_admin).head(10)
+        dev_freq_df = _collect_note_frequency(note_visit_df, dev_cols_admin).head(10)
+        self_support_freq_df = _collect_note_frequency(note_self_df, self_support_cols_admin).head(10)
+        twin_freq_df = _collect_note_frequency(note_twin_df, twin_cols_admin).head(10)
 
         admin_c1, admin_c2 = st.columns(2)
         with admin_c1:
@@ -2237,18 +2277,20 @@ def show_analysis(df, allowed_dept):
         if "القسم الأكاديمي" in filtered.columns and "اسم المعلمة" in filtered.columns:
             dept_note_rows = []
             for dept_name_admin, dept_grp_admin in filtered.groupby("القسم الأكاديمي"):
+                visit_dept_grp = note_visit_df[note_visit_df["القسم الأكاديمي"] == dept_name_admin] if "القسم الأكاديمي" in note_visit_df.columns else note_visit_df.iloc[0:0]
+                self_dept_grp = note_self_df[note_self_df["القسم الأكاديمي"] == dept_name_admin] if "القسم الأكاديمي" in note_self_df.columns else note_self_df.iloc[0:0]
                 s_count = 0
                 d_count = 0
                 support_count = 0
                 for c in strength_cols_admin:
-                    if c in dept_grp_admin.columns:
-                        s_count += dept_grp_admin[c].dropna().astype(str).str.strip().ne("").sum()
+                    if c in visit_dept_grp.columns:
+                        s_count += visit_dept_grp[c].dropna().astype(str).str.strip().ne("").sum()
                 for c in dev_cols_admin:
-                    if c in dept_grp_admin.columns:
-                        d_count += dept_grp_admin[c].dropna().astype(str).str.strip().ne("").sum()
+                    if c in visit_dept_grp.columns:
+                        d_count += visit_dept_grp[c].dropna().astype(str).str.strip().ne("").sum()
                 for c in self_support_cols_admin:
-                    if c in dept_grp_admin.columns:
-                        support_count += dept_grp_admin[c].dropna().astype(str).str.strip().ne("").sum()
+                    if c in self_dept_grp.columns:
+                        support_count += self_dept_grp[c].dropna().astype(str).str.strip().ne("").sum()
                 dept_note_rows.append({
                     "القسم": dept_name_admin,
                     "عدد المعلمات": dept_grp_admin["اسم المعلمة"].nunique(),

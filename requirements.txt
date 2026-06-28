@@ -1,8 +1,9 @@
 streamlit
 pandas
-openpyxl
-xlsxwriter
-plotly
-gspread
-google-auth
 requests
+plotly
+openpyxl
+reportlab
+arabic-reshaper
+python-bidi
+Pillow

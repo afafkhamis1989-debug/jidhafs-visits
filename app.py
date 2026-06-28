@@ -3,9 +3,8 @@ import pandas as pd
 import requests
 from io import BytesIO
 import plotly.graph_objects as go
+import plotly.express as px
 
-# مصدر البيانات: ملف Excel المرتبط بـ Microsoft Forms على SharePoint / OneDrive
-# يمكن تغيير الرابط من Streamlit secrets باسم EXCEL_URL أو تعديله هنا مباشرة.
 DEFAULT_EXCEL_URL = "https://moebh-my.sharepoint.com/:x:/g/personal/890302057_moe_bh/IQARg9ekg-gGR6izAPSeAlzTATuVdP8MoMG5g0O9aOIlGzI?e=owOi83"
 HEADER_PATH = "header.png"
 
@@ -29,11 +28,12 @@ JUDGMENT_ORDER = [
     "يتجاوز التوقعات بكثير"
 ]
 
+# ✅ الألوان المصححة حسب الطلب
 JUDGMENT_COLORS = {
-    "يفي بالتوقعات جزئياً": "#ef4444",
-    "يفي بالتوقعات": "#f59e0b",
-    "يتجاوز التوقعات": "#3b82f6",
-    "يتجاوز التوقعات بكثير": "#10b981",
+    "يفي بالتوقعات جزئياً": "#f472b6",   # وردي
+    "يفي بالتوقعات":         "#fbbf24",   # أصفر
+    "يتجاوز التوقعات":       "#3b82f6",   # أزرق
+    "يتجاوز التوقعات بكثير": "#10b981",   # أخضر
 }
 
 MONTHS = [
@@ -117,211 +117,127 @@ st.markdown("""
     background: #f0f4f8;
 }
 
-/* ── Sidebar ─────────────────────────── */
 [data-testid="stSidebar"] {
     background: linear-gradient(180deg, #0f2044 0%, #1a3a6e 100%);
     border-left: none;
 }
 [data-testid="stSidebar"] * { color: #e8edf5 !important; }
-[data-testid="stSidebar"] .stRadio label { 
-    font-size: 15px !important; 
-    padding: 6px 0;
-}
-[data-testid="stSidebar"] h2 { 
-    color: #7eb3f7 !important;
-    font-size: 18px !important;
+[data-testid="stSidebar"] .stRadio label { font-size: 15px !important; padding: 6px 0; }
+[data-testid="stSidebar"] h2 {
+    color: #7eb3f7 !important; font-size: 18px !important;
     border-bottom: 1px solid rgba(126,179,247,0.3);
-    padding-bottom: 8px;
-    margin-bottom: 12px;
+    padding-bottom: 8px; margin-bottom: 12px;
 }
 [data-testid="stSidebar"] .stTextInput input {
     background: rgba(255,255,255,0.1) !important;
     border: 1px solid rgba(126,179,247,0.4) !important;
-    color: white !important;
-    border-radius: 8px !important;
+    color: white !important; border-radius: 8px !important;
 }
 
-/* ── Page Header ──────────────────────── */
 .page-header {
     background: linear-gradient(135deg, #0f2044 0%, #1a3a6e 50%, #1e4d9b 100%);
-    border-radius: 16px;
-    padding: 28px 36px;
-    margin-bottom: 24px;
-    color: white;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+    border-radius: 16px; padding: 28px 36px; margin-bottom: 24px; color: white;
+    display: flex; align-items: center; justify-content: space-between;
     box-shadow: 0 8px 32px rgba(15,32,68,0.25);
 }
-.page-header-title {
-    font-size: 28px;
-    font-weight: 900;
-    margin: 0;
-    letter-spacing: -0.5px;
-}
-.page-header-sub {
-    font-size: 14px;
-    opacity: 0.75;
-    margin-top: 4px;
-}
+.page-header-title { font-size: 28px; font-weight: 900; margin: 0; letter-spacing: -0.5px; }
+.page-header-sub { font-size: 14px; opacity: 0.75; margin-top: 4px; }
 .page-header-badge {
-    background: rgba(255,255,255,0.15);
-    border: 1px solid rgba(255,255,255,0.25);
-    border-radius: 20px;
-    padding: 6px 18px;
-    font-size: 13px;
-    font-weight: 700;
+    background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 20px; padding: 6px 18px; font-size: 13px; font-weight: 700;
 }
 
-/* ── Section Title ────────────────────── */
 .section-title {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 18px;
-    font-weight: 800;
-    color: #0f2044;
-    margin: 28px 0 14px 0;
-    padding-bottom: 8px;
-    border-bottom: 2px solid #dbeafe;
+    display: flex; align-items: center; gap: 10px;
+    font-size: 18px; font-weight: 800; color: #0f2044;
+    margin: 28px 0 14px 0; padding-bottom: 8px; border-bottom: 2px solid #dbeafe;
 }
 .section-icon {
     width: 32px; height: 32px;
     background: linear-gradient(135deg, #1a3a6e, #2563eb);
-    border-radius: 8px;
-    display: flex; align-items: center; justify-content: center;
-    color: white; font-size: 16px;
+    border-radius: 8px; display: flex; align-items: center;
+    justify-content: center; color: white; font-size: 16px;
 }
 
-/* ── KPI Cards ────────────────────────── */
 .kpi-grid { display: flex; gap: 14px; margin-bottom: 8px; }
 .kpi-card {
-    flex: 1;
-    background: white;
-    border-radius: 14px;
-    padding: 20px 18px;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
-    border-top: 4px solid #2563eb;
-    text-align: center;
-    transition: transform 0.2s;
+    flex: 1; background: white; border-radius: 14px; padding: 20px 18px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06); border-top: 4px solid #2563eb;
+    text-align: center; transition: transform 0.2s;
 }
 .kpi-card:hover { transform: translateY(-2px); }
 .kpi-card.green  { border-top-color: #10b981; }
-.kpi-card.amber  { border-top-color: #f59e0b; }
-.kpi-card.red    { border-top-color: #ef4444; }
+.kpi-card.amber  { border-top-color: #fbbf24; }
+.kpi-card.pink   { border-top-color: #f472b6; }
 .kpi-card.blue   { border-top-color: #2563eb; }
 .kpi-label { font-size: 13px; color: #6b7280; font-weight: 600; margin-bottom: 6px; }
 .kpi-value { font-size: 30px; font-weight: 900; color: #111827; line-height: 1; }
 .kpi-sub   { font-size: 12px; color: #9ca3af; margin-top: 4px; }
 
-/* ── Judgment badge ───────────────────── */
-.badge {
-    display: inline-block;
-    padding: 4px 14px;
-    border-radius: 20px;
-    font-size: 13px;
-    font-weight: 700;
-}
+.badge { display: inline-block; padding: 4px 14px; border-radius: 20px; font-size: 13px; font-weight: 700; }
 .badge-green  { background: #d1fae5; color: #065f46; }
 .badge-blue   { background: #dbeafe; color: #1e40af; }
 .badge-amber  { background: #fef3c7; color: #92400e; }
-.badge-red    { background: #fee2e2; color: #991b1b; }
+.badge-pink   { background: #fce7f3; color: #9d174d; }
 
-/* ── Domain Cards ─────────────────────── */
 .domain-card {
-    background: white;
-    border-radius: 14px;
-    padding: 18px 20px;
-    margin-bottom: 12px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    background: white; border-radius: 14px; padding: 18px 20px;
+    margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);
     border-right: 5px solid #2563eb;
 }
-.domain-header {
-    display: flex; align-items: center; justify-content: space-between;
-    margin-bottom: 10px;
-}
+.domain-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .domain-name { font-size: 16px; font-weight: 800; color: #0f2044; }
-.progress-bar-bg {
-    height: 8px; background: #e5e7eb;
-    border-radius: 4px; overflow: hidden;
-}
+.progress-bar-bg { height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; }
 .progress-bar-fill {
     height: 100%; border-radius: 4px;
-    background: linear-gradient(90deg, #2563eb, #3b82f6);
-    transition: width 0.6s ease;
+    background: linear-gradient(90deg, #2563eb, #3b82f6); transition: width 0.6s ease;
 }
 
-/* ── Filter Panel ─────────────────────── */
 .filter-panel {
-    background: white;
-    border-radius: 14px;
-    padding: 20px 24px;
-    margin-bottom: 20px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.06);
-    border: 1px solid #e5e7eb;
+    background: white; border-radius: 14px; padding: 20px 24px;
+    margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.06); border: 1px solid #e5e7eb;
 }
-.filter-title {
-    font-size: 15px; font-weight: 800; color: #374151;
-    margin-bottom: 14px; display: flex; align-items: center; gap: 8px;
-}
+.filter-title { font-size: 15px; font-weight: 800; color: #374151; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
 
-/* ── Form Styles ──────────────────────── */
-.form-section {
-    background: white;
-    border-radius: 14px;
-    padding: 22px 26px;
-    margin-bottom: 16px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+.alert-card {
+    background: #fff7ed; border: 1px solid #fed7aa; border-right: 4px solid #f97316;
+    border-radius: 10px; padding: 12px 16px; margin-bottom: 8px;
+    display: flex; align-items: center; justify-content: space-between;
 }
-.item-card {
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-    border-radius: 10px;
-    padding: 14px 16px;
-    margin-bottom: 10px;
-}
-.item-num {
-    display: inline-flex;
-    width: 26px; height: 26px;
-    background: #1a3a6e;
-    color: white;
-    border-radius: 50%;
-    align-items: center; justify-content: center;
-    font-size: 13px; font-weight: 700;
-    margin-left: 10px;
-    flex-shrink: 0;
-}
-.item-text { font-size: 15px; font-weight: 600; color: #1e293b; line-height: 1.5; }
+.alert-name { font-size: 14px; font-weight: 700; color: #9a3412; }
+.alert-info { font-size: 12px; color: #c2410c; }
 
-/* ── Plotly Override ──────────────────── */
-.js-plotly-plot .plotly { direction: ltr; }
+.rank-card {
+    background: white; border-radius: 12px; padding: 14px 18px;
+    margin-bottom: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+    display: flex; align-items: center; gap: 14px;
+}
+.rank-num {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: linear-gradient(135deg, #1a3a6e, #2563eb);
+    color: white; display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 900; flex-shrink: 0;
+}
+.rank-info { flex: 1; }
+.rank-name { font-size: 15px; font-weight: 700; color: #111827; }
+.rank-sub  { font-size: 12px; color: #6b7280; }
 
-/* ── Footer ───────────────────────────── */
 .footer {
-    background: #0f2044;
-    border-radius: 12px;
-    padding: 16px 28px;
-    margin-top: 32px;
-    display: flex; justify-content: space-between; align-items: center;
+    background: #0f2044; border-radius: 12px; padding: 16px 28px;
+    margin-top: 32px; display: flex; justify-content: space-between; align-items: center;
 }
 .footer span { color: #94a3b8; font-size: 13px; font-weight: 600; }
 .footer .highlight { color: #7eb3f7; }
 
-/* ── Streamlit overrides ──────────────── */
 div[data-testid="stSelectbox"] > div { border-radius: 8px !important; }
 .stButton > button {
     background: linear-gradient(135deg, #1a3a6e, #2563eb) !important;
-    color: white !important;
-    border: none !important;
-    border-radius: 10px !important;
-    font-weight: 700 !important;
-    font-size: 16px !important;
-    padding: 12px 28px !important;
-    width: 100% !important;
+    color: white !important; border: none !important; border-radius: 10px !important;
+    font-weight: 700 !important; font-size: 16px !important;
+    padding: 12px 28px !important; width: 100% !important;
 }
 .stButton > button:hover {
-    background: linear-gradient(135deg, #0f2044, #1a3a6e) !important;
-    transform: translateY(-1px);
+    background: linear-gradient(135deg, #0f2044, #1a3a6e) !important; transform: translateY(-1px);
 }
 div[data-testid="stMetric"] { display: none; }
 </style>
@@ -339,17 +255,7 @@ def clean_col_name(x):
     return str(x).replace("\xa0", " ").strip()
 
 
-def first_existing_col(df, candidates):
-    cols = {clean_col_name(c): c for c in df.columns}
-    for cand in candidates:
-        cand_clean = clean_col_name(cand)
-        if cand_clean in cols:
-            return cols[cand_clean]
-    return None
-
-
 def combine_first_non_empty(df, candidates):
-    """يرجع أول قيمة غير فارغة من مجموعة أعمدة محتملة في نفس الصف."""
     found = [c for c in candidates if c in df.columns]
     if not found:
         return pd.Series([pd.NA] * len(df), index=df.index)
@@ -360,7 +266,6 @@ def combine_first_non_empty(df, candidates):
 
 
 def guess_ms_forms_download_urls(url):
-    """يجرب أكثر من صيغة لأن روابط SharePoint تختلف حسب الصلاحيات."""
     urls = []
     base = str(url).strip()
     if not base:
@@ -380,7 +285,7 @@ def load_excel_from_url(url):
             res.raise_for_status()
             content_type = res.headers.get("content-type", "").lower()
             if "text/html" in content_type and b"<html" in res.content[:500].lower():
-                last_error = "الرابط رجّع صفحة HTML وليس ملف Excel. غالباً يحتاج صلاحية أو رابط تنزيل مباشر."
+                last_error = "الرابط رجّع صفحة HTML وليس ملف Excel."
                 continue
             return pd.read_excel(BytesIO(res.content), sheet_name="Main")
         except Exception as e:
@@ -394,7 +299,6 @@ def load_excel_from_upload(uploaded_file):
 
 
 def standardize_ms_forms_dataframe(raw_df):
-    """يوحّد أعمدة Microsoft Forms إلى الأعمدة التي تعتمد عليها لوحة التحليل."""
     df = raw_df.copy()
     df.columns = [clean_col_name(c) for c in df.columns]
 
@@ -412,8 +316,6 @@ def standardize_ms_forms_dataframe(raw_df):
     out["نوع السجل"] = combine_first_non_empty(df, ["استمارات للقيادة الوسطى", "نوع السجل"])
     out["عدد الزيارات"] = combine_first_non_empty(df, ["عدد الزيارات2", "عدد الزيارات"])
 
-    # البنود في Microsoft Forms مكررة لثلاث استمارات: زيارة صفية، تقييم ذاتي، توأمة.
-    # نأخذ أول إجابة غير فارغة من الأعمدة المتطابقة في المعنى.
     item_patterns = {
         1: ["إظهار الطلبة المعارف والمهارات الأساسية", "اظهار الطلبة المعارف والمهارات الأساسية"],
         2: ["تحقيق الطلبة التقدم خلال الدروس"],
@@ -435,7 +337,6 @@ def standardize_ms_forms_dataframe(raw_df):
         18: ["إظهار الطلبة الثقة بالنفس", "اظهار الطلبة الثقة بالنفس"],
     }
 
-    used_cols = set()
     for item_no, patterns in item_patterns.items():
         matches = []
         for col in df.columns:
@@ -444,9 +345,7 @@ def standardize_ms_forms_dataframe(raw_df):
                 if pat in col_clean:
                     matches.append(col)
                     break
-        # لا نحذف الأعمدة المكررة، لأن المطلوب دمج نسخ الاستمارات الثلاث لنفس البند.
         out[f"بند {item_no}"] = combine_first_non_empty(df, matches)
-        used_cols.update(matches)
 
     text_mapping = {
         "نجاحات المعلم": ["نجاحات المعلم"],
@@ -473,7 +372,6 @@ def standardize_ms_forms_dataframe(raw_df):
     for out_col, candidates in text_mapping.items():
         out[out_col] = combine_first_non_empty(df, candidates)
 
-    # تنظيف نوع السجل حتى تظهر الفلاتر بشكل مفهوم
     out["نوع السجل"] = out["نوع السجل"].astype("string").str.strip()
     out["نوع السجل"] = out["نوع السجل"].replace({
         "استمارة الزيارة الصفية": "زيارة صفية",
@@ -481,8 +379,6 @@ def standardize_ms_forms_dataframe(raw_df):
         "استمارة التوأمة الموجهة": "توأمة موجهة",
     })
     out["نوع السجل"] = out["نوع السجل"].fillna("زيارة صفية")
-
-    # إزالة الصفوف الفارغة أو التجريبية التي لا تحتوي اسم معلمة
     out = out[out["اسم المعلمة"].notna() & (out["اسم المعلمة"].astype(str).str.strip() != "")]
     return out
 
@@ -524,7 +420,7 @@ def judgment_badge(judgment):
         "يتجاوز التوقعات بكثير": "badge-green",
         "يتجاوز التوقعات":       "badge-blue",
         "يفي بالتوقعات":         "badge-amber",
-        "يفي بالتوقعات جزئياً":  "badge-red",
+        "يفي بالتوقعات جزئياً":  "badge-pink",
     }
     cls = mapping.get(judgment, "badge-blue")
     return f'<span class="badge {cls}">{judgment}</span>'
@@ -551,7 +447,39 @@ def percent_color(p):
     if p >= 90: return "green"
     elif p >= 75: return "blue"
     elif p >= 60: return "amber"
-    return "red"
+    return "pink"
+
+
+def make_rtl_bar_h(y_vals, x_vals, colors, title_text=""):
+    """رسم بياني أفقي RTL: النصوص يمين، الأرقام يسار"""
+    fig = go.Figure(go.Bar(
+        x=x_vals,
+        y=y_vals,
+        orientation="h",
+        marker_color=colors,
+        text=[f"{v}%" for v in x_vals],
+        textposition="outside",
+        textfont=dict(size=13, color="#111827", family="Tajawal"),
+    ))
+    fig.update_layout(
+        xaxis=dict(
+            range=[0, 118],
+            showgrid=True,
+            gridcolor="#f0f4f8",
+            zeroline=False,
+            side="bottom",
+        ),
+        yaxis=dict(
+            tickfont=dict(size=13, family="Tajawal"),
+            autorange="reversed",   # أعلى قيمة فوق
+            side="right",           # ✅ النصوص جهة اليمين
+        ),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        margin=dict(l=10, r=240, t=20, b=10),
+        font=dict(family="Tajawal"),
+    )
+    return fig
 
 
 # ─── Analysis Page ────────────────────────────────────────────────────────────
@@ -621,11 +549,15 @@ def show_analysis(df, allowed_dept):
     judgment = get_general_judgment(percent)
     n_records = len(filtered)
     n_teachers = filtered["اسم المعلمة"].nunique() if "اسم المعلمة" in filtered.columns else 0
+
+    # حساب عدد الزيارات الصفية المنجزة (غير التقييم الذاتي)
+    n_classroom = len(filtered[filtered["نوع السجل"] == "زيارة صفية"]) if "نوع السجل" in filtered.columns else n_records
     pcolor = percent_color(percent)
 
     st.markdown(f"""
     <div class="kpi-grid">
         {kpi_card_html("إجمالي السجلات", n_records, "blue", "زيارة / تقييم")}
+        {kpi_card_html("الزيارات الصفية", n_classroom, "blue", "زيارة منجزة")}
         {kpi_card_html("عدد المعلمات", n_teachers, "blue", "معلمة مشمولة")}
         {kpi_card_html("النسبة العامة", f"{percent}%", pcolor)}
         <div class="kpi-card {pcolor}">
@@ -634,6 +566,23 @@ def show_analysis(df, allowed_dept):
         </div>
     </div>
     """, unsafe_allow_html=True)
+
+    # ── 1b. توزيع أنواع السجلات (إضافة جديدة) ────────────────────────────
+    if "نوع السجل" in filtered.columns:
+        type_counts = filtered["نوع السجل"].value_counts()
+        if len(type_counts) > 1:
+            cols_tc = st.columns(len(type_counts))
+            type_icons = {"زيارة صفية": "🏫", "تقييم ذاتي": "📝", "توأمة موجهة": "🤝"}
+            for i, (rtype_name, cnt) in enumerate(type_counts.items()):
+                icon = type_icons.get(rtype_name, "📌")
+                with cols_tc[i]:
+                    st.markdown(f"""
+                    <div style="background:white; border-radius:12px; padding:14px; text-align:center;
+                                box-shadow:0 2px 8px rgba(0,0,0,0.06); border-top:3px solid #2563eb; margin-bottom:12px;">
+                        <div style="font-size:24px">{icon}</div>
+                        <div style="font-size:22px; font-weight:900; color:#111827">{cnt}</div>
+                        <div style="font-size:13px; color:#6b7280; font-weight:600">{rtype_name}</div>
+                    </div>""", unsafe_allow_html=True)
 
     # ── 2. DOMAINS ────────────────────────────────────────────────────────────
     section_title("🧩", "تحليل المجالات الخمسة")
@@ -653,23 +602,13 @@ def show_analysis(df, allowed_dept):
 
         with col_a:
             df_dom = pd.DataFrame(domains_result).sort_values("النسبة", ascending=True)
-            colors = [JUDGMENT_COLORS.get(get_general_judgment(p), "#2563eb") for p in df_dom["النسبة"]]
-            fig = go.Figure(go.Bar(
-                x=df_dom["النسبة"], y=df_dom["المجال"],
-                orientation="h",
-                marker_color=colors,
-                text=[f"{p}%" for p in df_dom["النسبة"]],
-                textposition="outside",
-                textfont=dict(size=13, color="#111827"),
-            ))
-            fig.update_layout(
-                xaxis=dict(range=[0, 115], showgrid=True, gridcolor="#f0f4f8", zeroline=False),
-                yaxis=dict(tickfont=dict(size=13)),
-                plot_bgcolor="white", paper_bgcolor="white",
-                margin=dict(l=10, r=40, t=10, b=10),
-                height=280,
-                font=dict(family="Tajawal"),
+            colors_d = [JUDGMENT_COLORS.get(get_general_judgment(p), "#2563eb") for p in df_dom["النسبة"]]
+            fig = make_rtl_bar_h(
+                df_dom["المجال"].tolist(),
+                df_dom["النسبة"].tolist(),
+                colors_d
             )
+            fig.update_layout(height=300)
             st.plotly_chart(fig, use_container_width=True)
 
         with col_b:
@@ -705,30 +644,45 @@ def show_analysis(df, allowed_dept):
     if items_result:
         df_items = pd.DataFrame(items_result).sort_values("النسبة", ascending=True)
         colors_i = [JUDGMENT_COLORS.get(get_general_judgment(p), "#2563eb") for p in df_items["النسبة"]]
-        fig2 = go.Figure(go.Bar(
-            x=df_items["النسبة"], y=df_items["البند"],
-            orientation="h",
-            marker_color=colors_i,
-            text=[f"{p}%" for p in df_items["النسبة"]],
-            textposition="outside",
-            textfont=dict(size=12, color="#111827"),
-        ))
-        fig2.update_layout(
-            xaxis=dict(range=[0, 115], showgrid=True, gridcolor="#f0f4f8", zeroline=False),
-            yaxis=dict(tickfont=dict(size=12)),
-            plot_bgcolor="white", paper_bgcolor="white",
-            margin=dict(l=10, r=40, t=10, b=10),
-            height=480,
-            font=dict(family="Tajawal"),
+        fig2 = make_rtl_bar_h(
+            df_items["البند"].tolist(),
+            df_items["النسبة"].tolist(),
+            colors_i
         )
+        fig2.update_layout(height=520, margin=dict(l=10, r=100, t=20, b=10))
         st.plotly_chart(fig2, use_container_width=True)
 
-        # Items table with color rows
+        # ✅ جديد: أفضل 3 بنود وأضعف 3 بنود
+        df_items_sorted = df_items.sort_values("النسبة", ascending=False)
+        col_best, col_worst = st.columns(2)
+        with col_best:
+            st.markdown("""<div style="background:#f0fdf4; border-radius:12px; padding:14px 18px; margin-bottom:8px;">
+                <div style="font-size:15px; font-weight:800; color:#065f46; margin-bottom:10px;">🏆 أفضل 3 بنود أداءً</div>""",
+                unsafe_allow_html=True)
+            for _, row in df_items_sorted.head(3).iterrows():
+                st.markdown(f"""
+                <div style="display:flex; justify-content:space-between; align-items:center;
+                            background:white; border-radius:8px; padding:8px 12px; margin-bottom:6px;">
+                    <span style="font-weight:700; color:#111827">{row['البند']}</span>
+                    <span style="font-size:15px; font-weight:900; color:#10b981">{row['النسبة']}%</span>
+                </div>""", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        with col_worst:
+            st.markdown("""<div style="background:#fff7ed; border-radius:12px; padding:14px 18px; margin-bottom:8px;">
+                <div style="font-size:15px; font-weight:800; color:#9a3412; margin-bottom:10px;">⚠️ أضعف 3 بنود تحتاج تطوير</div>""",
+                unsafe_allow_html=True)
+            for _, row in df_items_sorted.tail(3).iterrows():
+                st.markdown(f"""
+                <div style="display:flex; justify-content:space-between; align-items:center;
+                            background:white; border-radius:8px; padding:8px 12px; margin-bottom:6px;">
+                    <span style="font-weight:700; color:#111827">{row['البند']}</span>
+                    <span style="font-size:15px; font-weight:900; color:#f472b6">{row['النسبة']}%</span>
+                </div>""", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
         with st.expander("📋 عرض جدول البنود التفصيلي"):
-            st.dataframe(
-                df_items.sort_values("النسبة", ascending=False),
-                use_container_width=True, hide_index=True
-            )
+            st.dataframe(df_items_sorted, use_container_width=True, hide_index=True)
 
     # ── 4. JUDGMENT DISTRIBUTION ──────────────────────────────────────────────
     section_title("🎯", "توزيع الأحكام الكلي")
@@ -793,15 +747,17 @@ def show_analysis(df, allowed_dept):
         tdf = pd.DataFrame(teacher_rows).sort_values("النسبة %", ascending=False)
 
         if len(tdf) > 1:
+            colors_t = [JUDGMENT_COLORS.get(get_general_judgment(p), "#2563eb") for p in tdf["النسبة %"]]
             fig_t = go.Figure(go.Bar(
-                x=tdf["اسم المعلمة"], y=tdf["النسبة %"],
-                marker_color=[JUDGMENT_COLORS.get(get_general_judgment(p), "#2563eb") for p in tdf["النسبة %"]],
+                x=tdf["اسم المعلمة"],
+                y=tdf["النسبة %"],
+                marker_color=colors_t,
                 text=[f"{p}%" for p in tdf["النسبة %"]],
                 textposition="outside",
-                textfont=dict(size=12),
+                textfont=dict(size=12, family="Tajawal"),
             ))
             fig_t.update_layout(
-                xaxis=dict(tickangle=-30, tickfont=dict(size=11)),
+                xaxis=dict(tickangle=-30, tickfont=dict(size=11, family="Tajawal")),
                 yaxis=dict(range=[0,115], showgrid=True, gridcolor="#f0f4f8"),
                 plot_bgcolor="white", paper_bgcolor="white",
                 margin=dict(l=10, r=10, t=10, b=60),
@@ -813,35 +769,144 @@ def show_analysis(df, allowed_dept):
         with st.expander("📋 جدول تفصيلي للمعلمات"):
             st.dataframe(tdf, use_container_width=True, hide_index=True)
 
-    # ── 6. DEPARTMENTS (admin only) ───────────────────────────────────────────
+    # ── 5b. ✅ جديد: المعلمات اللواتي لم تُسجَّل لهن زيارات ─────────────────
+    if allowed_dept != "الكل":
+        # نقارن المعلمات الموجودات في البيانات (كل المعلمات في القسم)
+        # مقابل اللواتي زُرن فعلاً (لهن سجلات زيارة صفية)
+        all_teachers_in_dept = df[
+            df["القسم الأكاديمي"].apply(normalize_text) == normalize_text(allowed_dept)
+        ]["اسم المعلمة"].dropna().unique()
+
+        visited_teachers = filtered[
+            filtered.get("نوع السجل", pd.Series(["زيارة صفية"]*len(filtered))) == "زيارة صفية"
+        ]["اسم المعلمة"].dropna().unique() if "نوع السجل" in filtered.columns else filtered["اسم المعلمة"].dropna().unique()
+
+        not_visited = [t for t in all_teachers_in_dept if t not in visited_teachers]
+
+        if not_visited:
+            section_title("⚠️", "معلمات لم تُسجَّل لهن زيارة صفية")
+            st.markdown(f"""
+            <div style="background:#fff7ed; border:1px solid #fed7aa; border-radius:12px;
+                        padding:14px 18px; margin-bottom:16px;">
+                <div style="font-size:14px; font-weight:700; color:#9a3412; margin-bottom:8px;">
+                    ⚠️ عدد المعلمات دون زيارات: {len(not_visited)}
+                </div>""", unsafe_allow_html=True)
+            for t in not_visited:
+                st.markdown(f"""
+                <div class="alert-card">
+                    <span class="alert-name">👩‍🏫 {t}</span>
+                    <span class="alert-info">لا توجد زيارات مسجلة</span>
+                </div>""", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    # ── 6. DEPARTMENTS — للمدير فقط ──────────────────────────────────────────
     if allowed_dept == "الكل" and "القسم الأكاديمي" in filtered.columns:
-        section_title("🏫", "مقارنة الأقسام الأكاديمية")
+        section_title("🏫", "ترتيب الأقسام الأكاديمية")
+
         dept_rows = []
         for dname, grp in filtered.groupby("القسم الأكاديمي"):
             dp = calculate_percentage(grp)
-            dept_rows.append({"القسم": dname, "عدد السجلات": len(grp), "النسبة %": dp, "الحكم": get_general_judgment(dp)})
-        ddf = pd.DataFrame(dept_rows).sort_values("النسبة %", ascending=False)
+            dept_rows.append({
+                "القسم": dname,
+                "عدد السجلات": len(grp),
+                "النسبة %": dp,
+                "الحكم": get_general_judgment(dp)
+            })
+        ddf = pd.DataFrame(dept_rows).sort_values("النسبة %", ascending=False).reset_index(drop=True)
+        ddf.index = ddf.index + 1  # ترتيب يبدأ من 1
 
-        fig_d = go.Figure(go.Bar(
-            x=ddf["القسم"], y=ddf["النسبة %"],
-            marker_color=[JUDGMENT_COLORS.get(get_general_judgment(p),"#2563eb") for p in ddf["النسبة %"]],
-            text=[f"{p}%" for p in ddf["النسبة %"]],
-            textposition="outside",
-            textfont=dict(size=12),
-        ))
-        fig_d.update_layout(
-            xaxis=dict(tickangle=-30, tickfont=dict(size=11)),
-            yaxis=dict(range=[0,115], showgrid=True, gridcolor="#f0f4f8"),
-            plot_bgcolor="white", paper_bgcolor="white",
-            margin=dict(l=10, r=10, t=10, b=80),
-            height=340,
-            font=dict(family="Tajawal"),
+        # رسم بياني للأقسام — RTL
+        ddf_chart = ddf.sort_values("النسبة %", ascending=True)
+        colors_dept = [JUDGMENT_COLORS.get(get_general_judgment(p), "#2563eb") for p in ddf_chart["النسبة %"]]
+        fig_d = make_rtl_bar_h(
+            ddf_chart["القسم"].tolist(),
+            ddf_chart["النسبة %"].tolist(),
+            colors_dept
         )
+        fig_d.update_layout(height=max(300, len(ddf)*40), margin=dict(l=10, r=260, t=20, b=10))
         st.plotly_chart(fig_d, use_container_width=True)
-        with st.expander("📋 جدول مقارنة الأقسام"):
-            st.dataframe(ddf, use_container_width=True, hide_index=True)
 
-    # ── 7. TEXT NOTES ─────────────────────────────────────────────────────────
+        # ✅ جدول الترتيب مع الميدالية
+        st.markdown("<div style='margin-top:16px;'>", unsafe_allow_html=True)
+        for i, row in ddf.iterrows():
+            medal = "🥇" if i == 1 else ("🥈" if i == 2 else ("🥉" if i == 3 else f"#{i}"))
+            bar_color = JUDGMENT_COLORS.get(row["الحكم"], "#2563eb")
+            st.markdown(f"""
+            <div class="rank-card" style="border-right: 4px solid {bar_color};">
+                <div class="rank-num">{medal}</div>
+                <div class="rank-info">
+                    <div class="rank-name">{row['القسم']}</div>
+                    <div class="rank-sub">{row['عدد السجلات']} سجل · {judgment_badge(row['الحكم'])}</div>
+                </div>
+                <div style="font-size:22px; font-weight:900; color:{bar_color}">{row['النسبة %']}%</div>
+            </div>""", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # ✅ جديد: المعلمات غير المزارات عبر كل الأقسام (للمدير فقط)
+        section_title("⚠️", "المعلمات اللواتي لم تُسجَّل لهن زيارات صفية")
+        if "نوع السجل" in df.columns:
+            all_t = df["اسم المعلمة"].dropna().unique()
+            visited_t = df[df["نوع السجل"] == "زيارة صفية"]["اسم المعلمة"].dropna().unique()
+            not_vis = [(t, df[df["اسم المعلمة"]==t]["القسم الأكاديمي"].iloc[0] if "القسم الأكاديمي" in df.columns else "") for t in all_t if t not in visited_t]
+            if not_vis:
+                col_nv1, col_nv2 = st.columns(2)
+                for idx, (tname, tdept) in enumerate(not_vis):
+                    with (col_nv1 if idx % 2 == 0 else col_nv2):
+                        st.markdown(f"""
+                        <div class="alert-card">
+                            <div>
+                                <div class="alert-name">👩‍🏫 {tname}</div>
+                                <div class="alert-info">{tdept}</div>
+                            </div>
+                            <span style="font-size:11px; background:#fed7aa; padding:3px 10px;
+                                         border-radius:10px; color:#9a3412; font-weight:700;">بدون زيارة</span>
+                        </div>""", unsafe_allow_html=True)
+            else:
+                st.success("✅ جميع المعلمات لديهن زيارات مسجلة")
+
+        with st.expander("📋 جدول مقارنة الأقسام"):
+            st.dataframe(ddf, use_container_width=True)
+
+    # ── 7. ✅ جديد: تحليل الأداء عبر الأشهر ─────────────────────────────────
+    if "الشهر" in filtered.columns and filtered["الشهر"].nunique() > 1:
+        section_title("📈", "تطور الأداء عبر الأشهر")
+
+        months_order = {m: i for i, m in enumerate(MONTHS)}
+        monthly_data = []
+        for m, grp in filtered.groupby("الشهر"):
+            mp = calculate_percentage(grp)
+            monthly_data.append({"الشهر": m, "النسبة": mp, "الترتيب": months_order.get(m, 99)})
+
+        mdf = pd.DataFrame(monthly_data).sort_values("الترتيب")
+        if len(mdf) > 1:
+            fig_line = go.Figure()
+            fig_line.add_trace(go.Scatter(
+                x=mdf["الشهر"], y=mdf["النسبة"],
+                mode="lines+markers+text",
+                line=dict(color="#2563eb", width=3),
+                marker=dict(
+                    size=12,
+                    color=[JUDGMENT_COLORS.get(get_general_judgment(p), "#2563eb") for p in mdf["النسبة"]],
+                    line=dict(color="white", width=2)
+                ),
+                text=[f"{p}%" for p in mdf["النسبة"]],
+                textposition="top center",
+                textfont=dict(size=13, family="Tajawal", color="#111827"),
+            ))
+            # خط الهدف 75%
+            fig_line.add_hline(y=75, line_dash="dash", line_color="#10b981", line_width=1.5,
+                               annotation_text="هدف 75%", annotation_position="left")
+            fig_line.update_layout(
+                xaxis=dict(tickfont=dict(size=12, family="Tajawal")),
+                yaxis=dict(range=[0, 115], showgrid=True, gridcolor="#f0f4f8"),
+                plot_bgcolor="white", paper_bgcolor="white",
+                margin=dict(l=10, r=10, t=20, b=10),
+                height=300,
+                font=dict(family="Tajawal"),
+            )
+            st.plotly_chart(fig_line, use_container_width=True)
+
+    # ── 8. TEXT NOTES ─────────────────────────────────────────────────────────
     text_cols = [
         "نجاحات المعلم", "جوانب بحاجة إلى تطوير",
         "نقاط القوة في أدائي العام", "نقاط الضعف التي تحتاج إلى تطوير",
@@ -890,7 +955,6 @@ if not st.session_state["logged_in"]:
 
 allowed_dept = st.session_state["allowed_dept"]
 
-# Sidebar nav
 st.sidebar.markdown("---")
 dept_label = "🛡️ مدير النظام" if allowed_dept == "الكل" else f"🏫 {allowed_dept}"
 st.sidebar.markdown(
@@ -903,7 +967,6 @@ if st.sidebar.button("🚪 تسجيل الخروج"):
     st.session_state.update({"logged_in": False, "allowed_dept": None})
     st.rerun()
 
-# Page Header
 st.markdown(f"""
 <div class="page-header">
     <div>
@@ -913,7 +976,6 @@ st.markdown(f"""
     <div class="page-header-badge">{dept_label}</div>
 </div>""", unsafe_allow_html=True)
 
-# Load data only — no internal Streamlit forms
 st.sidebar.markdown("---")
 if st.sidebar.button("🔄 تحديث البيانات"):
     st.cache_data.clear()
@@ -934,7 +996,6 @@ except Exception as e:
     st.info("إذا ظهر هذا الخطأ في Streamlit Cloud، غالباً الرابط يحتاج تسجيل دخول. الحل السريع: حمّلي ملف Excel من Forms وارفعيه من الزر الجانبي، أو خلي الرابط Anyone with the link can view إن كان مسموح في الوزارة.")
     st.code(str(e))
 
-# Footer
 st.markdown("""
 <div class="footer">
     <span>مديرة المدرسة: <span class="highlight">أ. خلود يعقوب</span></span>
@@ -942,4 +1003,3 @@ st.markdown("""
     <span>تصميم وبرمجة: <span class="highlight">أ. عفاف حسين</span></span>
 </div>
 """, unsafe_allow_html=True)
-

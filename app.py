@@ -147,6 +147,7 @@ DEFAULT_EXCEL_URL = "https://moebh-my.sharepoint.com/:x:/g/personal/890302057_mo
 # ملف قائمة الكادر المرجعية: يتم تحديثه خارج الكود عند تغيير الأسماء أو الوظائف
 TEACHERS_REFERENCE_FILE = "Classroom_Visits_System.xlsx"
 TEACHERS_REFERENCE_SHEET = "Teachers"
+EXCEPTIONS_REFERENCE_SHEET = "Exceptions"
 # رابط Google Sheet المرجعي، ويُستخدم إذا كان متاحاً للنشر/التصدير
 TEACHERS_GOOGLE_SHEET_EXPORT_URL = "https://docs.google.com/spreadsheets/d/1o_j5LlwROGITpakLNFqvvSJpLFXVAf3tdFcvCuR9q2w/export?format=xlsx"
 
@@ -774,6 +775,110 @@ def standardize_teachers_reference(raw_df):
     return out.reset_index(drop=True)
 
 
+def standardize_exceptions_reference(raw_df):
+    """
+    يقرأ جدول الاستثناءات الاختياري من تبويب Exceptions.
+    الأعمدة المدعومة اختيارياً:
+    السنة الدراسية، الفصل الدراسي، الشهر، القسم الأكاديمي، اسم المعلمة، نوع المتابعة، السبب، ملاحظة.
+    إذا تُرك الشهر = الكل أو فارغ ينطبق الاستثناء على كل أشهر الفترة المختارة.
+    إذا تُرك نوع المتابعة = الكل أو فارغ ينطبق على كل أنواع المتابعة للمعلمة.
+    """
+    df_exc = raw_df.copy()
+    df_exc.columns = [clean_col_name(c) for c in df_exc.columns]
+    out = pd.DataFrame(index=df_exc.index)
+    out["السنة الدراسية"] = combine_first_non_empty(df_exc, ["السنة الدراسية", "السنة", "Year"])
+    out["الفصل الدراسي"] = combine_first_non_empty(df_exc, ["الفصل الدراسي", "الفصل", "Semester"])
+    out["الشهر"] = combine_first_non_empty(df_exc, ["الشهر", "Month"])
+    out["القسم الأكاديمي"] = combine_first_non_empty(df_exc, ["القسم الأكاديمي", "القسم", "الأقسام الأكاديمية"])
+    out["اسم المعلمة"] = combine_first_non_empty(df_exc, ["اسم المعلمة", "اسم المعلم", "الاسم"])
+    out["نوع المتابعة"] = combine_first_non_empty(df_exc, ["نوع المتابعة", "المطلوب", "نوع الزيارة", "المتابعة"])
+    out["السبب"] = combine_first_non_empty(df_exc, ["سبب عدم الزيارة", "السبب", "سبب الإعفاء", "سبب الاعفاء"])
+    out["ملاحظة"] = combine_first_non_empty(df_exc, ["ملاحظة", "ملاحظات", "تفاصيل"])
+
+    for c in out.columns:
+        out[c] = out[c].fillna("").astype("string").str.strip()
+
+    out = out[out["اسم المعلمة"].astype(str).str.strip().ne("")]
+    out = out[out["السبب"].astype(str).str.strip().ne("")]
+    return out.reset_index(drop=True)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def load_exceptions_reference():
+    """قراءة الاستثناءات من تبويب Exceptions إن وجد، وإلا يرجع جدول فارغ."""
+    base_dir = _safe_base_dir()
+    local_candidates = [
+        os.path.join(base_dir, TEACHERS_REFERENCE_FILE),
+        os.path.join(os.getcwd(), TEACHERS_REFERENCE_FILE),
+        "/mnt/data/Classroom_Visits_System.xlsx",
+    ]
+    for path in local_candidates:
+        try:
+            if os.path.exists(path):
+                raw = pd.read_excel(path, sheet_name=EXCEPTIONS_REFERENCE_SHEET)
+                return standardize_exceptions_reference(raw)
+        except Exception:
+            pass
+    try:
+        res = requests.get(TEACHERS_GOOGLE_SHEET_EXPORT_URL, timeout=25)
+        res.raise_for_status()
+        raw = pd.read_excel(BytesIO(res.content), sheet_name=EXCEPTIONS_REFERENCE_SHEET)
+        return standardize_exceptions_reference(raw)
+    except Exception:
+        pass
+    return pd.DataFrame(columns=["السنة الدراسية", "الفصل الدراسي", "الشهر", "القسم الأكاديمي", "اسم المعلمة", "نوع المتابعة", "السبب", "ملاحظة"])
+
+
+def _exception_for_row(exceptions_df, row, year):
+    """يرجع سبب الاستثناء إذا كان الصف يطابق استثناء موثقاً."""
+    if exceptions_df is None or exceptions_df.empty:
+        return "", ""
+    exc = exceptions_df.copy()
+
+    def _matches_optional(series, value):
+        s = series.fillna("").astype(str).str.strip()
+        return (s == "") | (s == "الكل") | (s.astype(str) == str(value))
+
+    mask = exc["اسم المعلمة"].astype(str).apply(normalize_text) == normalize_text(row.get("اسم المعلمة", ""))
+    if "القسم الأكاديمي" in exc.columns:
+        mask &= _matches_optional(exc["القسم الأكاديمي"], row.get("القسم الأكاديمي", ""))
+    if "السنة الدراسية" in exc.columns:
+        mask &= _matches_optional(exc["السنة الدراسية"], year)
+    if "الفصل الدراسي" in exc.columns and "الفصل الدراسي" in row:
+        mask &= _matches_optional(exc["الفصل الدراسي"], row.get("الفصل الدراسي", ""))
+    if "الشهر" in exc.columns and "الشهر" in row:
+        mask &= _matches_optional(exc["الشهر"], row.get("الشهر", ""))
+    if "نوع المتابعة" in exc.columns:
+        # نسمح بالمطابقة الجزئية حتى لو كُتب: زيارة شهرية، تقييم ذاتي، قيادة وسطى...
+        follow = normalize_text(row.get("نوع المتابعة", ""))
+        typ = exc["نوع المتابعة"].fillna("").astype(str).apply(normalize_text)
+        mask &= (typ == "") | (typ == "الكل") | typ.apply(lambda x: (x in follow) or (follow in x) if x and follow else True)
+
+    matched = exc[mask]
+    if matched.empty:
+        return "", ""
+    first = matched.iloc[0]
+    return str(first.get("السبب", "")).strip(), str(first.get("ملاحظة", "")).strip()
+
+
+def _split_missing_and_exempt(rows, exceptions_df, year):
+    missing_rows, exempt_rows = [], []
+    for r in rows:
+        reason, note = _exception_for_row(exceptions_df, r, year)
+        if reason:
+            rr = dict(r)
+            rr["الحالة"] = "معفاة"
+            rr["سبب عدم الزيارة"] = reason
+            rr["ملاحظة"] = note
+            exempt_rows.append(rr)
+        else:
+            rr = dict(r)
+            rr["سبب عدم الزيارة"] = ""
+            rr["ملاحظة"] = ""
+            missing_rows.append(rr)
+    return missing_rows, exempt_rows
+
+
 def _is_regular_teacher_job(job):
     j = normalize_text(job).replace(" ", "")
     return j == "معلم" or j == "معلمه"
@@ -841,10 +946,10 @@ def _selected_semesters_for_self_eval(visits_scope, selected_sem):
     return ["الفصل الدراسي الأول", "الفصل الدراسي الثاني"]
 
 
-def build_visit_compliance(visits_df, teachers_df, allowed_dept, selected_dept, year, sem, month):
+def build_visit_compliance(visits_df, teachers_df, exceptions_df, allowed_dept, selected_dept, year, sem, month):
     """يبني جدول المتابعة: زيارة شهرية للمعلمين/القيادة الوسطى + تقييم ذاتي فصلي للجميع."""
     if teachers_df is None or teachers_df.empty:
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
     staff = teachers_df.copy()
     if allowed_dept != "الكل":
@@ -923,15 +1028,20 @@ def build_visit_compliance(visits_df, teachers_df, allowed_dept, selected_dept, 
                     "الحالة": "ناقصة",
                 })
 
-    monthly_missing = pd.DataFrame(monthly_rows)
-    self_missing = pd.DataFrame(self_rows)
+    monthly_missing_rows, monthly_exempt_rows = _split_missing_and_exempt(monthly_rows, exceptions_df, year)
+    self_missing_rows, self_exempt_rows = _split_missing_and_exempt(self_rows, exceptions_df, year)
+
+    monthly_missing = pd.DataFrame(monthly_missing_rows)
+    self_missing = pd.DataFrame(self_missing_rows)
+    exempted = pd.DataFrame(monthly_exempt_rows + self_exempt_rows)
 
     summary_rows = [
         {"المؤشر": "المعلمات دون زيارة شهرية", "العدد": int((monthly_missing["نوع المتابعة"] == "زيارة شهرية للمعلمات").sum()) if not monthly_missing.empty else 0},
         {"المؤشر": "القيادة الوسطى دون زيارة شهرية", "العدد": int((monthly_missing["نوع المتابعة"] == "زيارة شهرية للقيادة الوسطى").sum()) if not monthly_missing.empty else 0},
         {"المؤشر": "لم يُكملوا التقييم الذاتي الفصلي", "العدد": len(self_missing)},
+        {"المؤشر": "حالات معفاة بسبب موثق", "العدد": len(exempted)},
     ]
-    return pd.DataFrame(summary_rows), monthly_missing, self_missing
+    return pd.DataFrame(summary_rows), monthly_missing, self_missing, exempted
 
 
 def calculate_percentage(df):
@@ -2022,15 +2132,19 @@ def show_analysis(df, allowed_dept):
         teachers_ref_df = load_teachers_reference()
     except Exception:
         teachers_ref_df = pd.DataFrame()
+    try:
+        exceptions_ref_df = load_exceptions_reference()
+    except Exception:
+        exceptions_ref_df = pd.DataFrame()
 
     if teachers_ref_df is not None and not teachers_ref_df.empty:
         section_title("📋", "متابعة الالتزام بالزيارات والتقييم الذاتي")
         selected_dept_for_compliance = dept if allowed_dept == "الكل" and 'dept' in locals() else "الكل"
-        comp_summary, monthly_missing_df, self_missing_df = build_visit_compliance(
-            df, teachers_ref_df, allowed_dept, selected_dept_for_compliance, year, sem, month
+        comp_summary, monthly_missing_df, self_missing_df, exempted_df = build_visit_compliance(
+            df, teachers_ref_df, exceptions_ref_df, allowed_dept, selected_dept_for_compliance, year, sem, month
         )
 
-        c_m1, c_m2, c_m3 = st.columns(3)
+        c_m1, c_m2, c_m3, c_m4 = st.columns(4)
         summary_dict = dict(zip(comp_summary["المؤشر"], comp_summary["العدد"])) if not comp_summary.empty else {}
         with c_m1:
             n1 = summary_dict.get("المعلمات دون زيارة شهرية", 0)
@@ -2041,11 +2155,16 @@ def show_analysis(df, allowed_dept):
         with c_m3:
             n3 = summary_dict.get("لم يُكملوا التقييم الذاتي الفصلي", 0)
             st.markdown(f'<div class="compliance-card {"danger" if n3 else "success"}"><div class="compliance-title">التقييم الذاتي الفصلي</div><div class="compliance-num">{n3}</div><div class="compliance-sub">مرة واحدة كل فصل للجميع</div></div>', unsafe_allow_html=True)
+        with c_m4:
+            n4 = summary_dict.get("حالات معفاة بسبب موثق", 0)
+            st.markdown(f'<div class="compliance-card success"><div class="compliance-title">حالات معفاة</div><div class="compliance-num">{n4}</div><div class="compliance-sub">إجازة/نقل/انتداب/أخرى</div></div>', unsafe_allow_html=True)
 
-        if monthly_missing_df.empty and self_missing_df.empty:
+        st.caption("تعتمد المتابعة على ملف Teachers، والاستثناءات الاختيارية من تبويب Exceptions إذا كان موجودًا. الحالات المعفاة لا تُحسب ضمن النقص الحقيقي.")
+
+        if monthly_missing_df.empty and self_missing_df.empty and (exempted_df is None or exempted_df.empty):
             st.success("✅ جميع متطلبات الزيارات الشهرية والتقييم الذاتي مكتملة حسب الفلاتر المختارة.")
         else:
-            tab_monthly, tab_self = st.tabs(["🗓️ الزيارات الشهرية الناقصة", "📝 التقييم الذاتي الناقص"])
+            tab_monthly, tab_self, tab_exempt = st.tabs(["🗓️ الزيارات الشهرية الناقصة", "📝 التقييم الذاتي الناقص", "🟡 حالات معفاة بسبب موثق"])
             with tab_monthly:
                 if monthly_missing_df.empty:
                     st.success("✅ لا توجد زيارات شهرية ناقصة حسب الفلاتر المختارة.")
@@ -2060,6 +2179,13 @@ def show_analysis(df, allowed_dept):
                     st.dataframe(self_missing_df, use_container_width=True, hide_index=True)
                     csv_self = self_missing_df.to_csv(index=False).encode("utf-8-sig")
                     st.download_button("⬇️ تحميل التقييم الذاتي الناقص CSV", csv_self, "missing_self_evaluation.csv", "text/csv", key="dl_missing_self")
+            with tab_exempt:
+                if exempted_df is None or exempted_df.empty:
+                    st.info("لا توجد حالات معفاة موثقة حسب الفلاتر المختارة.")
+                else:
+                    st.dataframe(exempted_df, use_container_width=True, hide_index=True)
+                    csv_exempt = exempted_df.to_csv(index=False).encode("utf-8-sig")
+                    st.download_button("⬇️ تحميل الحالات المعفاة CSV", csv_exempt, "exempted_visits_reasons.csv", "text/csv", key="dl_exempted")
     else:
         st.warning("⚠️ لم يتم العثور على ملف قائمة الكادر Classroom_Visits_System.xlsx / Teachers، لذلك لا يمكن حساب من لم تُسجل لهم زيارة من خارج بيانات الزيارات.")
 

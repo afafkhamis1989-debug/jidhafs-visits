@@ -658,7 +658,7 @@ def make_rtl_bar_h(y_vals, x_vals, colors, title_text="", label_fontsize=13, rig
 
 
 # ─── PDF Generator ────────────────────────────────────────────────────────────
-def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="المدرسة"):
+def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="المدرسة", filter_info=None):
     """
     report_type: 'summary' = ملخص تنفيذي | 'detailed' = تفصيلي
     """
@@ -682,8 +682,9 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
 
     # ── حجم الصفحة والهوامش ───────────────────────────────────────────────
     PAGE_W, PAGE_H = A4
-    HEADER_H = 3.2 * cm   # ارتفاع منطقة الشعار
-    TOP_MARGIN = HEADER_H + 0.5 * cm
+    # إذا لم يوجد شعار، لا نترك فراغاً كبيراً أعلى الصفحة
+    HEADER_H = 3.2 * cm if _header_img else 0.55 * cm
+    TOP_MARGIN = HEADER_H + 0.25 * cm
 
     from reportlab.lib.utils import ImageReader
 
@@ -742,21 +743,69 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
         "يفي بالتوقعات جزئياً":  colors.HexColor("#f472b6"),
     }
 
+    def _pbar(percent_value, color_value, width_cm=6.5):
+        """شريط بياني صغير داخل جدول PDF."""
+        p = max(0, min(float(percent_value or 0), 100))
+        w = width_cm * cm
+        filled = max(0.04 * cm, w * p / 100)
+        empty = max(0.04 * cm, w - filled)
+        tbl = Table([["", ""]], colWidths=[filled, empty], rowHeights=[0.20 * cm])
+        tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (0,0), color_value),
+            ("BACKGROUND", (1,0), (1,0), colors.HexColor("#e5e7eb")),
+            ("BOX", (0,0), (-1,-1), 0.25, colors.HexColor("#d1d5db")),
+            ("LEFTPADDING", (0,0), (-1,-1), 0),
+            ("RIGHTPADDING", (0,0), (-1,-1), 0),
+            ("TOPPADDING", (0,0), (-1,-1), 0),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 0),
+        ]))
+        return tbl
+
     story = []
 
     # ── غلاف ──────────────────────────────────────────────────────────────
-    story.append(Spacer(1, 1.5*cm))
+    story.append(Spacer(1, 0.15*cm))
     story.append(Paragraph(ar("تقرير الزيارات الصفية"), S["title"]))
     story.append(Paragraph(ar("مدرسة جدحفص الثانوية للبنات"), S["subtitle"]))
     story.append(Paragraph(ar(f"القسم: {dept_name}"), S["subtitle"]))
 
-    # تاريخ التقرير
+    # تاريخ التقرير + الفلاتر المختارة
     import datetime
     today = datetime.date.today().strftime("%Y/%m/%d")
     story.append(Paragraph(ar(f"تاريخ التقرير: {today}"), S["subtitle"]))
-    story.append(Spacer(1, 0.4*cm))
+
+    if filter_info:
+        filter_rows = []
+        keys_order = ["السنة الدراسية", "الفصل الدراسي", "الشهر", "نوع الزيارة", "القسم الأكاديمي", "اسم المعلمة"]
+        for k in keys_order:
+            v = filter_info.get(k, "الكل")
+            filter_rows.append([Paragraph(ar(str(v)), S["tbl_cell"]), Paragraph(ar(k), S["tbl_num"])])
+        # ترتيب على صفين حتى تظهر بشكل أنيق
+        row1 = filter_rows[:3]
+        row2 = filter_rows[3:]
+        ft_data = []
+        for block in [row1, row2]:
+            cells = []
+            for value_cell, label_cell in block:
+                cells.extend([value_cell, label_cell])
+            ft_data.append(cells)
+        ft = Table(ft_data, colWidths=[3.2*cm, 2.0*cm, 3.2*cm, 2.0*cm, 3.2*cm, 2.0*cm])
+        ft.setStyle(TableStyle([
+            ("BACKGROUND", (1,0), (1,-1), colors.HexColor("#f1f5f9")),
+            ("BACKGROUND", (3,0), (3,-1), colors.HexColor("#f1f5f9")),
+            ("BACKGROUND", (5,0), (5,-1), colors.HexColor("#f1f5f9")),
+            ("BOX", (0,0), (-1,-1), 0.5, colors.HexColor("#e5e7eb")),
+            ("INNERGRID", (0,0), (-1,-1), 0.35, colors.HexColor("#e5e7eb")),
+            ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+            ("TOPPADDING", (0,0), (-1,-1), 5),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+        ]))
+        story.append(Spacer(1, 0.2*cm))
+        story.append(ft)
+
+    story.append(Spacer(1, 0.25*cm))
     story.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor("#0f2044")))
-    story.append(Spacer(1, 0.5*cm))
+    story.append(Spacer(1, 0.35*cm))
 
     # ── KPIs ──────────────────────────────────────────────────────────────
     percent  = calculate_percentage(filtered_df)
@@ -833,6 +882,72 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
     dom_tbl.setStyle(TableStyle(dom_style))
     story.append(dom_tbl)
 
+    # رسم بياني مبسط للمجالات داخل ملف PDF
+    if domain_rows and len(domain_rows) > 1:
+        story.append(Spacer(1, 0.35*cm))
+        story.append(Paragraph(ar("رسم بياني للمجالات"), S["h2"]))
+        chart_rows = [[Paragraph(ar("النسبة"), S["tbl_hdr"]), Paragraph(ar("الرسم البياني"), S["tbl_hdr"]), Paragraph(ar("المجال"), S["tbl_hdr"] )]]
+        for row in domains_result if 'domains_result' in locals() else []:
+            pass
+        # إعادة بناء بيانات المجالات من الجدول أعلاه
+        for domain, items in ITEMS_STRUCTURE.items():
+            dcols = [f"بند {n}" for n, _ in items if f"بند {n}" in filtered_df.columns]
+            vals = []
+            for dc in dcols:
+                vals.extend(filtered_df[dc].map(JUDGMENT_WEIGHTS).dropna().tolist())
+            if vals:
+                dp = round((sum(vals)/(len(vals)*4))*100, 1)
+                jd = get_general_judgment(dp)
+                jc = JCOLORS.get(jd, colors.HexColor("#2563eb"))
+                chart_rows.append([
+                    Paragraph(ar(f"{dp}%"), S["tbl_num"]),
+                    _pbar(dp, jc, 7.2),
+                    Paragraph(ar(domain), S["tbl_cell"]),
+                ])
+        chart_tbl = Table(chart_rows, colWidths=[2.0*cm, 7.4*cm, 6.0*cm])
+        chart_tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#0f2044")),
+            ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+            ("BOX", (0,0), (-1,-1), 0.5, colors.HexColor("#e5e7eb")),
+            ("INNERGRID", (0,0), (-1,-1), 0.35, colors.HexColor("#e5e7eb")),
+            ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+            ("TOPPADDING", (0,0), (-1,-1), 5),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+        ]))
+        story.append(chart_tbl)
+
+    # رسم توزيع الأحكام الكلي
+    item_cols_pdf = [f"بند {i}" for i in range(1,19) if f"بند {i}" in filtered_df.columns]
+    all_j_pdf = []
+    for col in item_cols_pdf:
+        all_j_pdf.extend(filtered_df[col].dropna().astype(str).str.strip().tolist())
+    if all_j_pdf:
+        story.append(Spacer(1, 0.35*cm))
+        story.append(Paragraph(ar("رسم توزيع الأحكام الكلي"), S["h2"]))
+        total_j = len(all_j_pdf)
+        dist_rows = [[Paragraph(ar("النسبة"), S["tbl_hdr"]), Paragraph(ar("العدد"), S["tbl_hdr"]), Paragraph(ar("الرسم البياني"), S["tbl_hdr"]), Paragraph(ar("الحكم"), S["tbl_hdr"] )]]
+        for j in reversed(JUDGMENT_ORDER):
+            cnt = all_j_pdf.count(j)
+            pct_j = round(cnt / total_j * 100, 1) if total_j else 0
+            jc = JCOLORS.get(j, colors.HexColor("#94a3b8"))
+            dist_rows.append([
+                Paragraph(ar(f"{pct_j}%"), S["tbl_num"]),
+                Paragraph(ar(str(cnt)), S["tbl_num"]),
+                _pbar(pct_j, jc, 6.2),
+                Paragraph(ar(j), S["tbl_cell"]),
+            ])
+        dist_tbl = Table(dist_rows, colWidths=[2*cm, 1.6*cm, 6.4*cm, 5.4*cm])
+        dist_tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#0f2044")),
+            ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+            ("BOX", (0,0), (-1,-1), 0.5, colors.HexColor("#e5e7eb")),
+            ("INNERGRID", (0,0), (-1,-1), 0.35, colors.HexColor("#e5e7eb")),
+            ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+            ("TOPPADDING", (0,0), (-1,-1), 5),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+        ]))
+        story.append(dist_tbl)
+
     # ── تفصيل البنود (للتقرير التفصيلي فقط) ──────────────────────────────
     if report_type == "detailed":
         story.append(Spacer(1, 0.6*cm))
@@ -906,6 +1021,37 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
             itm_style.append(("FONTNAME",  (0, ri), (0, ri), _reg_bold))
         itm_tbl.setStyle(TableStyle(itm_style))
         story.append(itm_tbl)
+
+        # رسم بياني للبنود الـ 18 في التقرير التفصيلي
+        story.append(Spacer(1, 0.35*cm))
+        story.append(Paragraph(ar("رسم بياني لنسب البنود الـ 18"), S["h2"]))
+        item_chart_rows = [[Paragraph(ar("النسبة"), S["tbl_hdr"]), Paragraph(ar("الرسم البياني"), S["tbl_hdr"]), Paragraph(ar("البند"), S["tbl_hdr"]), Paragraph(ar("#"), S["tbl_hdr"])]]
+        for i in range(1, 19):
+            col_i = f"بند {i}"
+            if col_i in filtered_df.columns:
+                vals_i = filtered_df[col_i].map(JUDGMENT_WEIGHTS).dropna().tolist()
+                if vals_i:
+                    ip = round((sum(vals_i)/(len(vals_i)*4))*100, 1)
+                    ji = get_general_judgment(ip)
+                    jc = JCOLORS.get(ji, colors.HexColor("#2563eb"))
+                    item_chart_rows.append([
+                        Paragraph(ar(f"{ip}%"), small_num),
+                        _pbar(ip, jc, 5.8),
+                        Paragraph(ar(ITEM_NAMES.get(i, f"بند {i}")), small_cell),
+                        Paragraph(ar(str(i)), small_num),
+                    ])
+        item_chart_tbl = Table(item_chart_rows, colWidths=[1.4*cm, 6.0*cm, 7.3*cm, 0.7*cm], repeatRows=1)
+        item_chart_tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#0f2044")),
+            ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#f8fafc")]),
+            ("BOX", (0,0), (-1,-1), 0.5, colors.HexColor("#e5e7eb")),
+            ("INNERGRID", (0,0), (-1,-1), 0.35, colors.HexColor("#e5e7eb")),
+            ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+            ("TOPPADDING", (0,0), (-1,-1), 3),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 3),
+        ]))
+        story.append(item_chart_tbl)
 
         # ── جدول المعلمات ─────────────────────────────────────────────────
         if "اسم المعلمة" in filtered_df.columns:
@@ -1015,6 +1161,16 @@ def show_analysis(df, allowed_dept):
     teacher = st.selectbox("👩‍🏫 اسم المعلمة", teachers)
     if teacher != "الكل":
         filtered = filtered[filtered["اسم المعلمة"].astype(str) == teacher]
+
+    selected_dept_pdf = dept if allowed_dept == "الكل" else allowed_dept
+    filter_info_pdf = {
+        "السنة الدراسية": year,
+        "الفصل الدراسي": sem,
+        "الشهر": month,
+        "نوع الزيارة": visitor,
+        "القسم الأكاديمي": selected_dept_pdf,
+        "اسم المعلمة": teacher,
+    }
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -1740,7 +1896,7 @@ def show_analysis(df, allowed_dept):
                 try:
                     with st.spinner("جاري إعداد التقرير..."):
                         st.session_state["pdf_summary_bytes"] = generate_pdf(
-                            filtered, allowed_dept, report_type="summary", dept_name=dept_label_pdf
+                            filtered, allowed_dept, report_type="summary", dept_name=dept_label_pdf, filter_info=filter_info_pdf
                         )
                 except Exception as e:
                     st.session_state["pdf_summary_bytes"] = None
@@ -1761,7 +1917,7 @@ def show_analysis(df, allowed_dept):
                 try:
                     with st.spinner("جاري إعداد التقرير التفصيلي..."):
                         st.session_state["pdf_detailed_bytes"] = generate_pdf(
-                            filtered, allowed_dept, report_type="detailed", dept_name=dept_label_pdf
+                            filtered, allowed_dept, report_type="detailed", dept_name=dept_label_pdf, filter_info=filter_info_pdf
                         )
                 except Exception as e:
                     st.session_state["pdf_detailed_bytes"] = None

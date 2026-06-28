@@ -9,7 +9,7 @@ import os
 import sys
 import subprocess
 
-# ✅ PATCH_VERSION: 2026-06-28_REAL_FIX_HTML_MONTHLY_PDF_NOTES_DASHBOARD
+# ✅ PATCH_VERSION: 2026-06-28_REAL_FIX_HTML_MONTHLY_PDF_NOTES_DASHBOARD_ADMIN_QUALITATIVE
 
 # ── PDF — استيراد المكتبات والخط العربي تلقائياً ─────────────────────────────
 # ملاحظة:
@@ -990,6 +990,67 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
             "أفكار جديدة يمكن أن أستفيد منها لتطوير ممارساتي التدريسية",
             "توصيات المعلم المزور",
         ], "#7c3aed")
+
+    def _top_pdf_notes(cols, limit=8):
+        # يستخدم في تقرير الأدمن/القسم عندما لا يتم اختيار معلمة محددة.
+        freq = {}
+        for c in cols:
+            if c in filtered_df.columns:
+                for v in filtered_df[c].dropna().tolist():
+                    t = _clean_pdf_note(v)
+                    if t:
+                        freq[t] = freq.get(t, 0) + 1
+        return sorted(freq.items(), key=lambda x: (-x[1], x[0]))[:limit]
+
+    if report_type == "detailed" and selected_teacher == "الكل" and len(filtered_df) > 0:
+        strength_cols_pdf = [
+            "نجاحات المعلم", "نقاط القوة في أدائي العام", "أبرز نقاط القوة",
+            "توظيف جوانب التميز لديها", "مدى التحسين في الأداء",
+        ]
+        dev_cols_pdf = [
+            "جوانب بحاجة إلى تطوير", "نقاط الضعف التي تحتاج إلى تطوير",
+            "أبرز الجوانب التي تحتاج إلى تطوير", "الدعم المطلوب من زيارات القيادة الوسطى",
+            "الدعم المقدم لها", "مقترحاتي لتطوير أدائي",
+        ]
+        twin_cols_pdf = [
+            "الأهداف التعليمية للحصة", "أساليب واستراتيجيات التدريس الملحوظة",
+            "ما الذي يمكن أن أستفيد منه لتطوير ممارساتي التدريسية",
+            "أفكار جديدة يمكن أن أستفيد منها لتطوير ممارساتي التدريسية",
+            "توصيات المعلم المزور",
+        ]
+        strength_top = _top_pdf_notes(strength_cols_pdf, 8)
+        dev_top = _top_pdf_notes(dev_cols_pdf, 8)
+        twin_top = _top_pdf_notes(twin_cols_pdf, 6)
+        if strength_top or dev_top or twin_top:
+            story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#dbeafe")))
+            story.append(Paragraph(ar("الخلاصة النوعية للإدارة"), S["h2"]))
+            note_sum_rows = [[
+                Paragraph(ar("أكثر الملاحظات تكراراً"), S["tbl_hdr"]),
+                Paragraph(ar("المحور"), S["tbl_hdr"]),
+            ]]
+            def _fmt(items):
+                return " • ".join([f"{txt} ({cnt})" for txt, cnt in items])
+            if strength_top:
+                note_sum_rows.append([Paragraph(ar(_fmt(strength_top)), S["tbl_cell"]), Paragraph(ar("نقاط القوة"), S["tbl_num"])])
+            if dev_top:
+                note_sum_rows.append([Paragraph(ar(_fmt(dev_top)), S["tbl_cell"]), Paragraph(ar("جوانب التطوير والدعم"), S["tbl_num"])])
+            if twin_top:
+                note_sum_rows.append([Paragraph(ar(_fmt(twin_top)), S["tbl_cell"]), Paragraph(ar("ملاحظات التوأمة"), S["tbl_num"])])
+            note_sum_tbl = Table(note_sum_rows, colWidths=[12.0*cm, 4.2*cm], repeatRows=1)
+            note_sum_tbl.setStyle(TableStyle([
+                ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#0f2044")),
+                ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+                ("BACKGROUND", (1,1), (1,-1), colors.HexColor("#f8fafc")),
+                ("BOX", (0,0), (-1,-1), 0.5, colors.HexColor("#e5e7eb")),
+                ("INNERGRID", (0,0), (-1,-1), 0.35, colors.HexColor("#e5e7eb")),
+                ("VALIGN", (0,0), (-1,-1), "TOP"),
+                ("TOPPADDING", (0,0), (-1,-1), 5),
+                ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+                ("RIGHTPADDING", (0,0), (-1,-1), 7),
+                ("LEFTPADDING", (0,0), (-1,-1), 7),
+            ]))
+            story.append(note_sum_tbl)
+            story.append(Spacer(1, 0.25*cm))
 
     story.append(Spacer(1, 0.25*cm))
 
@@ -2100,6 +2161,80 @@ def show_analysis(df, allowed_dept):
                 st.markdown(html, unsafe_allow_html=True)
             else:
                 st.info("لا توجد جوانب تطوير مسجلة حسب الفلاتر الحالية.")
+
+    # ── 10c. لوحة الأدمن: تحليل نوعي مجمع للملاحظات ──────────────────────────
+    if allowed_dept == "الكل" and has_notes_dashboard:
+        section_title("🛡️", "لوحة الأدمن - أبرز الملاحظات النوعية")
+        st.caption("ملخص إداري مجمع حسب الفلاتر الحالية: أكثر نقاط القوة وجوانب التطوير تكراراً على مستوى المدرسة/القسم/الشهر.")
+
+        def _collect_note_frequency(source_df, cols):
+            freq = {}
+            for c in cols:
+                if c in source_df.columns:
+                    for v in source_df[c].dropna().astype(str).tolist():
+                        txt = " ".join(v.replace("<", " ").replace(">", " ").replace("&", " و ").split()).strip()
+                        if txt and txt.lower() not in ["nan", "none"]:
+                            freq[txt] = freq.get(txt, 0) + 1
+            return pd.DataFrame([{"الملاحظة": k, "عدد التكرار": v} for k, v in freq.items()]).sort_values("عدد التكرار", ascending=False) if freq else pd.DataFrame(columns=["الملاحظة", "عدد التكرار"])
+
+        strength_cols_admin = [
+            "نجاحات المعلم", "نقاط القوة في أدائي العام", "أبرز نقاط القوة",
+            "توظيف جوانب التميز لديها", "مدى التحسين في الأداء",
+        ]
+        dev_cols_admin = [
+            "جوانب بحاجة إلى تطوير", "نقاط الضعف التي تحتاج إلى تطوير",
+            "أبرز الجوانب التي تحتاج إلى تطوير", "الدعم المطلوب من زيارات القيادة الوسطى",
+            "الدعم المقدم لها", "مقترحاتي لتطوير أدائي",
+        ]
+        twin_cols_admin = [
+            "الأهداف التعليمية للحصة", "أساليب واستراتيجيات التدريس الملحوظة",
+            "ما الذي يمكن أن أستفيد منه لتطوير ممارساتي التدريسية",
+            "أفكار جديدة يمكن أن أستفيد منها لتطوير ممارساتي التدريسية",
+            "توصيات المعلم المزور",
+        ]
+
+        strength_freq_df = _collect_note_frequency(filtered, strength_cols_admin).head(10)
+        dev_freq_df = _collect_note_frequency(filtered, dev_cols_admin).head(10)
+        twin_freq_df = _collect_note_frequency(filtered, twin_cols_admin).head(10)
+
+        admin_c1, admin_c2 = st.columns(2)
+        with admin_c1:
+            st.markdown("**✅ أكثر نقاط القوة تكراراً**")
+            if not strength_freq_df.empty:
+                st.dataframe(strength_freq_df, use_container_width=True, hide_index=True)
+            else:
+                st.info("لا توجد نقاط قوة مسجلة حسب الفلاتر الحالية.")
+        with admin_c2:
+            st.markdown("**⚠️ أكثر جوانب التطوير والدعم تكراراً**")
+            if not dev_freq_df.empty:
+                st.dataframe(dev_freq_df, use_container_width=True, hide_index=True)
+            else:
+                st.info("لا توجد جوانب تطوير مسجلة حسب الفلاتر الحالية.")
+
+        if not twin_freq_df.empty:
+            with st.expander("🤝 ملخص ملاحظات التوأمة الموجهة"):
+                st.dataframe(twin_freq_df, use_container_width=True, hide_index=True)
+
+        if "القسم الأكاديمي" in filtered.columns and "اسم المعلمة" in filtered.columns:
+            dept_note_rows = []
+            for dept_name_admin, dept_grp_admin in filtered.groupby("القسم الأكاديمي"):
+                s_count = 0
+                d_count = 0
+                for c in strength_cols_admin:
+                    if c in dept_grp_admin.columns:
+                        s_count += dept_grp_admin[c].dropna().astype(str).str.strip().ne("").sum()
+                for c in dev_cols_admin:
+                    if c in dept_grp_admin.columns:
+                        d_count += dept_grp_admin[c].dropna().astype(str).str.strip().ne("").sum()
+                dept_note_rows.append({
+                    "القسم": dept_name_admin,
+                    "عدد المعلمات": dept_grp_admin["اسم المعلمة"].nunique(),
+                    "ملاحظات قوة": int(s_count),
+                    "ملاحظات تطوير/دعم": int(d_count),
+                })
+            if dept_note_rows:
+                with st.expander("📊 توزيع الملاحظات النوعية حسب الأقسام"):
+                    st.dataframe(pd.DataFrame(dept_note_rows).sort_values("ملاحظات تطوير/دعم", ascending=False), use_container_width=True, hide_index=True)
 
     # ── PDF تنزيل التقرير ─────────────────────────────────────────────────────
     section_title("📄", "تنزيل التقرير")

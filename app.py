@@ -6,6 +6,26 @@ import plotly.graph_objects as go
 import plotly.express as px
 import math
 import os
+import sys
+import subprocess
+
+# ── تثبيت مكتبات PDF تلقائياً إذا غير موجودة ─────────────────────────────
+def _ensure_pdf_libs():
+    try:
+        import reportlab, arabic_reshaper, bidi
+        return True
+    except ImportError:
+        try:
+            subprocess.check_call([
+                sys.executable, "-m", "pip", "install",
+                "reportlab", "arabic-reshaper", "python-bidi",
+                "--quiet", "--no-warn-script-location"
+            ])
+            return True
+        except Exception:
+            return False
+
+_ensure_pdf_libs()
 
 # ── PDF ──────────────────────────────────────────────────────────────────────
 try:

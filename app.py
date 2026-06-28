@@ -846,14 +846,15 @@ def show_analysis(df, allowed_dept):
     if allowed_dept == "الكل" and "القسم الأكاديمي" in filtered.columns:
         section_title("🏫", "ترتيب الأقسام الأكاديمية")
 
-        # ── نظام النقاط المركّب ─────────────────────────────────────────────
-        # المعادلة: النقاط = (نسبة الأداء × 0.50) + (% يتجاوز بكثير × 0.30) + (معامل الحجم × 20)
-        # معامل الحجم: 1–2 معلمة → 1.0 | 3–5 → 1.1 | 6–10 → 1.2 | 11+ → 1.3
-        def size_factor(n):
-            if n <= 2:   return 1.0
-            elif n <= 5:  return 1.1
-            elif n <= 10: return 1.2
-            else:         return 1.3
+        # ── نظام النقاط المركّب (مقيّد بين 0 و100) ─────────────────────────
+        # المعادلة: النقاط = (نسبة الأداء × 0.55) + (% يتجاوز بكثير × 0.35) + (علاوة الحجم × 0.10)
+        # علاوة الحجم: 1–2 → 60 | 3–5 → 75 | 6–10 → 88 | 11+ → 100
+        # بهذه الطريقة أقصى نقطة = 100×0.55 + 100×0.35 + 100×0.10 = 100
+        def size_bonus(n):
+            if n <= 2:   return 60
+            elif n <= 5:  return 75
+            elif n <= 10: return 88
+            else:         return 100
 
         item_cols_dept = [f"بند {i}" for i in range(1,19) if f"بند {i}" in filtered.columns]
 
@@ -873,8 +874,8 @@ def show_analysis(df, allowed_dept):
                 if all_judgments else 0
             )
 
-            sf = size_factor(n_teachers_dept)
-            composite = round(dp * 0.50 + pct_excellent * 0.30 + sf * 20, 1)
+            sf = size_bonus(n_teachers_dept)
+            composite = round(dp * 0.55 + pct_excellent * 0.35 + sf * 0.10, 1)
 
             dept_rows.append({
                 "القسم": dname,
@@ -882,7 +883,7 @@ def show_analysis(df, allowed_dept):
                 "عدد السجلات": len(grp),
                 "نسبة الأداء %": dp,
                 "% يتجاوز بكثير": pct_excellent,
-                "معامل الحجم": sf,
+                "علاوة الحجم": sf,
                 "النقاط المركّبة": composite,
                 "الحكم": get_general_judgment(dp),
             })
@@ -895,14 +896,7 @@ def show_analysis(df, allowed_dept):
         ddf.index = ddf.index + 1
 
         # شرح المنهجية
-        st.markdown("""
-        <div style="background:#eff6ff; border:1px solid #bfdbfe; border-right:4px solid #2563eb;
-                    border-radius:10px; padding:12px 16px; margin-bottom:18px; font-size:13px; color:#1e40af;">
-            <b>📐 منهجية الترتيب المركّب:</b> لا يعتمد الترتيب على النسبة وحدها بل على ثلاثة معايير:
-            نسبة الأداء (50%) + نسبة التميز العالي (30%) + معامل حجم القسم (20%).
-            قسم كبير يحقق أداءً جيداً مع معلمات كثيرات يُقدَّر أكثر من قسم صغير نسبته أعلى.
-        </div>
-        """, unsafe_allow_html=True)
+
 
         # ── الرسم البياني: نسبة الأداء فقط (للمقارنة البصرية) ─────────────
         ddf_chart = ddf.sort_values("نسبة الأداء %", ascending=True)
@@ -922,7 +916,7 @@ def show_analysis(df, allowed_dept):
         for i, row in ddf.iterrows():
             medal = "🥇" if i == 1 else ("🥈" if i == 2 else ("🥉" if i == 3 else f"#{i}"))
             bar_color = JUDGMENT_COLORS.get(row["الحكم"], "#2563eb")
-            sf_label = {1.0:"صغير جداً", 1.1:"صغير", 1.2:"متوسط", 1.3:"كبير"}.get(row["معامل الحجم"], "")
+            sf_label = {60:"صغير جداً", 75:"صغير", 88:"متوسط", 100:"كبير"}.get(row["علاوة الحجم"], "")
             st.markdown(f"""
             <div class="rank-card" style="border-right: 4px solid {bar_color};">
                 <div class="rank-num">{medal}</div>
@@ -964,7 +958,7 @@ def show_analysis(df, allowed_dept):
                 st.success("✅ جميع المعلمات لديهن زيارات مسجلة")
 
         with st.expander("📋 جدول مقارنة الأقسام التفصيلي"):
-            show_cols = ["القسم", "عدد المعلمات", "عدد السجلات", "نسبة الأداء %", "% يتجاوز بكثير", "معامل الحجم", "النقاط المركّبة", "الحكم"]
+            show_cols = ["القسم", "عدد المعلمات", "عدد السجلات", "نسبة الأداء %", "% يتجاوز بكثير", "علاوة الحجم", "النقاط المركّبة", "الحكم"]
             st.dataframe(ddf[show_cols], use_container_width=True)
 
     # ── 7. ✅ جديد: تحليل الأداء عبر الأشهر ─────────────────────────────────

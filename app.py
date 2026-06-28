@@ -846,24 +846,70 @@ def show_analysis(df, allowed_dept):
     if allowed_dept == "الكل" and "القسم الأكاديمي" in filtered.columns:
         section_title("🏫", "ترتيب الأقسام الأكاديمية")
 
+        # ── نظام النقاط المركّب ─────────────────────────────────────────────
+        # المعادلة: النقاط = (نسبة الأداء × 0.50) + (% يتجاوز بكثير × 0.30) + (معامل الحجم × 20)
+        # معامل الحجم: 1–2 معلمة → 1.0 | 3–5 → 1.1 | 6–10 → 1.2 | 11+ → 1.3
+        def size_factor(n):
+            if n <= 2:   return 1.0
+            elif n <= 5:  return 1.1
+            elif n <= 10: return 1.2
+            else:         return 1.3
+
+        item_cols_dept = [f"بند {i}" for i in range(1,19) if f"بند {i}" in filtered.columns]
+
         dept_rows = []
         for dname, grp in filtered.groupby("القسم الأكاديمي"):
             dp = calculate_percentage(grp)
+
+            # عدد المعلمات الفريدات في القسم
+            n_teachers_dept = grp["اسم المعلمة"].nunique() if "اسم المعلمة" in grp.columns else len(grp)
+
+            # نسبة "يتجاوز التوقعات بكثير" من كل الأحكام في القسم
+            all_judgments = []
+            for ic in item_cols_dept:
+                all_judgments.extend(grp[ic].dropna().astype(str).tolist())
+            pct_excellent = (
+                round(all_judgments.count("يتجاوز التوقعات بكثير") / len(all_judgments) * 100, 1)
+                if all_judgments else 0
+            )
+
+            sf = size_factor(n_teachers_dept)
+            composite = round(dp * 0.50 + pct_excellent * 0.30 + sf * 20, 1)
+
             dept_rows.append({
                 "القسم": dname,
+                "عدد المعلمات": n_teachers_dept,
                 "عدد السجلات": len(grp),
-                "النسبة %": dp,
-                "الحكم": get_general_judgment(dp)
+                "نسبة الأداء %": dp,
+                "% يتجاوز بكثير": pct_excellent,
+                "معامل الحجم": sf,
+                "النقاط المركّبة": composite,
+                "الحكم": get_general_judgment(dp),
             })
-        ddf = pd.DataFrame(dept_rows).sort_values("النسبة %", ascending=False).reset_index(drop=True)
-        ddf.index = ddf.index + 1  # ترتيب يبدأ من 1
 
-        # رسم بياني للأقسام — RTL
-        ddf_chart = ddf.sort_values("النسبة %", ascending=True)
-        colors_dept = [JUDGMENT_COLORS.get(get_general_judgment(p), "#2563eb") for p in ddf_chart["النسبة %"]]
+        ddf = (
+            pd.DataFrame(dept_rows)
+            .sort_values("النقاط المركّبة", ascending=False)
+            .reset_index(drop=True)
+        )
+        ddf.index = ddf.index + 1
+
+        # شرح المنهجية
+        st.markdown("""
+        <div style="background:#eff6ff; border:1px solid #bfdbfe; border-right:4px solid #2563eb;
+                    border-radius:10px; padding:12px 16px; margin-bottom:18px; font-size:13px; color:#1e40af;">
+            <b>📐 منهجية الترتيب المركّب:</b> لا يعتمد الترتيب على النسبة وحدها بل على ثلاثة معايير:
+            نسبة الأداء (50%) + نسبة التميز العالي (30%) + معامل حجم القسم (20%).
+            قسم كبير يحقق أداءً جيداً مع معلمات كثيرات يُقدَّر أكثر من قسم صغير نسبته أعلى.
+        </div>
+        """, unsafe_allow_html=True)
+
+        # ── الرسم البياني: نسبة الأداء فقط (للمقارنة البصرية) ─────────────
+        ddf_chart = ddf.sort_values("نسبة الأداء %", ascending=True)
+        colors_dept = [JUDGMENT_COLORS.get(get_general_judgment(p), "#2563eb") for p in ddf_chart["نسبة الأداء %"]]
         fig_d = make_rtl_bar_h(
             ddf_chart["القسم"].tolist(),
-            ddf_chart["النسبة %"].tolist(),
+            ddf_chart["نسبة الأداء %"].tolist(),
             colors_dept,
             label_fontsize=13,
             right_margin=240,
@@ -871,19 +917,27 @@ def show_analysis(df, allowed_dept):
         fig_d.update_layout(height=max(320, len(ddf)*48))
         st.plotly_chart(fig_d, use_container_width=True)
 
-        # ✅ جدول الترتيب مع الميدالية
-        st.markdown("<div style='margin-top:16px;'>", unsafe_allow_html=True)
+        # ── بطاقات الترتيب المركّب ──────────────────────────────────────────
+        st.markdown("<div style='margin-top:4px;'>", unsafe_allow_html=True)
         for i, row in ddf.iterrows():
             medal = "🥇" if i == 1 else ("🥈" if i == 2 else ("🥉" if i == 3 else f"#{i}"))
             bar_color = JUDGMENT_COLORS.get(row["الحكم"], "#2563eb")
+            sf_label = {1.0:"صغير جداً", 1.1:"صغير", 1.2:"متوسط", 1.3:"كبير"}.get(row["معامل الحجم"], "")
             st.markdown(f"""
             <div class="rank-card" style="border-right: 4px solid {bar_color};">
                 <div class="rank-num">{medal}</div>
                 <div class="rank-info">
                     <div class="rank-name">{row['القسم']}</div>
-                    <div class="rank-sub">{row['عدد السجلات']} سجل · {judgment_badge(row['الحكم'])}</div>
+                    <div class="rank-sub">
+                        {row['عدد المعلمات']} معلمة ({sf_label}) ·
+                        أداء: {row['نسبة الأداء %']}% ·
+                        تميز: {row['% يتجاوز بكثير']}%
+                    </div>
                 </div>
-                <div style="font-size:22px; font-weight:900; color:{bar_color}">{row['النسبة %']}%</div>
+                <div style="text-align:center; min-width:72px;">
+                    <div style="font-size:20px; font-weight:900; color:{bar_color}">{row['النقاط المركّبة']}</div>
+                    <div style="font-size:10px; color:#6b7280; font-weight:600;">نقطة مركّبة</div>
+                </div>
             </div>""", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -909,8 +963,9 @@ def show_analysis(df, allowed_dept):
             else:
                 st.success("✅ جميع المعلمات لديهن زيارات مسجلة")
 
-        with st.expander("📋 جدول مقارنة الأقسام"):
-            st.dataframe(ddf, use_container_width=True)
+        with st.expander("📋 جدول مقارنة الأقسام التفصيلي"):
+            show_cols = ["القسم", "عدد المعلمات", "عدد السجلات", "نسبة الأداء %", "% يتجاوز بكثير", "معامل الحجم", "النقاط المركّبة", "الحكم"]
+            st.dataframe(ddf[show_cols], use_container_width=True)
 
     # ── 7. ✅ جديد: تحليل الأداء عبر الأشهر ─────────────────────────────────
     if "الشهر" in filtered.columns and filtered["الشهر"].nunique() > 1:

@@ -9,6 +9,8 @@ import os
 import sys
 import subprocess
 
+# ✅ PATCH_VERSION: 2026-06-28_REAL_FIX_HTML_MONTHLY_PDF
+
 # ── PDF — استيراد المكتبات والخط العربي تلقائياً ─────────────────────────────
 # ملاحظة:
 # ضعي المكتبات في requirements.txt ولا تثبتيها من داخل Streamlit.
@@ -408,14 +410,16 @@ st.markdown("""
     border-bottom:1px solid #e5e7eb;
 }
 .insight-row{
-    display:grid;
-    grid-template-columns:42px 1fr 74px;
-    gap:12px;
+    direction:rtl;
+    display:flex;
+    flex-direction:row;
+    gap:14px;
     align-items:center;
+    justify-content:space-between;
     background:#ffffff;
     border:1px solid #eef2f7;
     border-radius:14px;
-    padding:11px 12px;
+    padding:13px 14px;
     margin-bottom:10px;
     box-shadow:0 2px 10px rgba(15,32,68,0.05);
 }
@@ -433,19 +437,21 @@ st.markdown("""
 .insight-wrap.best .insight-rank{background:linear-gradient(135deg,#059669,#10b981);} 
 .insight-wrap.weak .insight-rank{background:linear-gradient(135deg,#ea580c,#f472b6);} 
 .insight-name{
-    font-size:13px;
+    flex:1;
+    text-align:right;
+    font-size:14px;
     font-weight:800;
     color:#111827;
     line-height:1.55;
 }
 .insight-percent{
-    justify-self:end;
-    min-width:66px;
+    min-width:78px;
     text-align:center;
     border-radius:999px;
-    padding:6px 8px;
+    padding:7px 10px;
     font-size:15px;
     font-weight:900;
+    flex-shrink:0;
 }
 .insight-wrap.best .insight-percent{background:#d1fae5;color:#065f46;}
 .insight-wrap.weak .insight-percent{background:#fce7f3;color:#9d174d;}
@@ -916,18 +922,86 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
         ("LINEABOVE",   (3,0), (3,-1), 2, j_color),
     ]))
     story.append(kpi_tbl)
-    story.append(Spacer(1, 0.6*cm))
+    story.append(Spacer(1, 0.35*cm))
 
-    # ── المجالات الخمسة ───────────────────────────────────────────────────
+    # ── الخلاصة المهنية للتقرير الفردي ───────────────────────────────────
+    def _clean_pdf_note(value):
+        if pd.isna(value):
+            return ""
+        txt = str(value).replace("<", " ").replace(">", " ").replace("&", " و ").strip()
+        txt = " ".join(txt.split())
+        return txt
+
+    def _append_notes_section(section_name, cols, accent_hex):
+        rows = []
+        for c in cols:
+            if c in filtered_df.columns:
+                vals = []
+                for v in filtered_df[c].dropna().tolist():
+                    t = _clean_pdf_note(v)
+                    if t and t not in vals:
+                        vals.append(t)
+                if vals:
+                    rows.append([
+                        Paragraph(ar(" • ".join(vals[:4])), S["tbl_cell"]),
+                        Paragraph(ar(c), ParagraphStyle("note_lbl", fontName=_reg_bold, fontSize=9, alignment=TA_CENTER, leading=13, textColor=colors.HexColor(accent_hex))),
+                    ])
+        if rows:
+            story.append(Paragraph(ar(section_name), S["h2"]))
+            tbl = Table(rows, colWidths=[12.2*cm, 4.0*cm])
+            tbl.setStyle(TableStyle([
+                ("BACKGROUND", (1,0), (1,-1), colors.HexColor("#f8fafc")),
+                ("BOX", (0,0), (-1,-1), 0.5, colors.HexColor("#e5e7eb")),
+                ("INNERGRID", (0,0), (-1,-1), 0.35, colors.HexColor("#e5e7eb")),
+                ("VALIGN", (0,0), (-1,-1), "TOP"),
+                ("TOPPADDING", (0,0), (-1,-1), 5),
+                ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+                ("RIGHTPADDING", (0,0), (-1,-1), 7),
+                ("LEFTPADDING", (0,0), (-1,-1), 7),
+                ("LINERIGHT", (1,0), (1,-1), 3, colors.HexColor(accent_hex)),
+            ]))
+            story.append(tbl)
+            story.append(Spacer(1, 0.25*cm))
+
+    selected_teacher = (filter_info or {}).get("اسم المعلمة", "الكل")
+    if report_type == "detailed" and selected_teacher != "الكل" and len(filtered_df) > 0:
+        visitor_text_pdf = " ".join(filtered_df.get("الزائر", pd.Series(dtype=str)).dropna().astype(str).tolist())
+        record_text_pdf = " ".join(filtered_df.get("نوع السجل", pd.Series(dtype=str)).dropna().astype(str).tolist())
+        combined_type_pdf = normalize_text(visitor_text_pdf + " " + record_text_pdf)
+        story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#dbeafe")))
+        if "تقييم" in combined_type_pdf:
+            _append_notes_section("الخلاصة المهنية - التقييم الذاتي", [
+                "نقاط القوة في أدائي العام",
+                "نقاط الضعف التي تحتاج إلى تطوير",
+                "أبرز نقاط القوة",
+                "أبرز الجوانب التي تحتاج إلى تطوير",
+                "الدعم المطلوب من زيارات القيادة الوسطى",
+                "مقترحاتي لتطوير أدائي",
+            ], "#2563eb")
+        elif "توامه" in combined_type_pdf:
+            _append_notes_section("الخلاصة المهنية - التوأمة الموجهة", [
+                "الأهداف التعليمية للحصة",
+                "أساليب واستراتيجيات التدريس الملحوظة",
+                "ما الذي يمكن أن أستفيد منه لتطوير ممارساتي التدريسية",
+                "أفكار جديدة يمكن أن أستفيد منها لتطوير ممارساتي التدريسية",
+                "توصيات المعلم المزور",
+            ], "#7c3aed")
+        else:
+            _append_notes_section("الخلاصة المهنية", [
+                "نجاحات المعلم",
+                "جوانب بحاجة إلى تطوير",
+                "الدعم المقدم لها",
+                "توظيف جوانب التميز لديها",
+                "مدى التحسين في الأداء",
+            ], "#10b981")
+
+    story.append(Spacer(1, 0.25*cm))
+
+    # ── المجالات الخمسة: جدول مدمج مع الرسم البياني لتقليل الصفحات ─────────────────
     story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#dbeafe")))
     story.append(Paragraph(ar("تحليل المجالات الخمسة"), S["h2"]))
 
-    domain_rows = [[
-        Paragraph(ar("الحكم"),    S["tbl_hdr"]),
-        Paragraph(ar("النسبة %"), S["tbl_hdr"]),
-        Paragraph(ar("المجال"),   S["tbl_hdr"]),
-    ]]
-    domain_colors_map = []
+    domain_records = []
     for domain, items in ITEMS_STRUCTURE.items():
         dcols = [f"بند {n}" for n, _ in items if f"بند {n}" in filtered_df.columns]
         vals = []
@@ -937,62 +1011,41 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
             dp = round((sum(vals)/(len(vals)*4))*100, 1)
             jd = get_general_judgment(dp)
             jc = JCOLORS.get(jd, colors.HexColor("#2563eb"))
-            domain_rows.append([
-                Paragraph(ar(jd),  S["tbl_cell"]),
-                Paragraph(ar(f"{dp}%"), S["tbl_num"]),
-                Paragraph(ar(domain),  S["tbl_cell"]),
-            ])
-            domain_colors_map.append(jc)
+            domain_records.append((domain, dp, jd, jc))
 
-    dom_tbl = Table(domain_rows, colWidths=[4*cm, 2.5*cm, 9*cm])
-    dom_style = [
-        ("BACKGROUND",   (0,0), (-1, 0), colors.HexColor("#0f2044")),
-        ("TEXTCOLOR",    (0,0), (-1, 0), colors.white),
-        ("ROWBACKGROUNDS",(0,1),(-1,-1),[colors.white, colors.HexColor("#f8fafc")]),
-        ("BOX",          (0,0), (-1,-1), 0.5, colors.HexColor("#e5e7eb")),
-        ("INNERGRID",    (0,0), (-1,-1), 0.5, colors.HexColor("#e5e7eb")),
-        ("TOPPADDING",   (0,0), (-1,-1), 7),
-        ("BOTTOMPADDING",(0,0), (-1,-1), 7),
-        ("VALIGN",       (0,0), (-1,-1), "MIDDLE"),
-    ]
-    for ri, jc in enumerate(domain_colors_map, start=1):
-        dom_style.append(("TEXTCOLOR", (0, ri), (0, ri), jc))
-        dom_style.append(("FONTNAME",  (0, ri), (0, ri), _reg_bold))
-        dom_style.append(("LINERIGHT", (2, ri), (2, ri), 3, jc))
-    dom_tbl.setStyle(TableStyle(dom_style))
-    story.append(dom_tbl)
+    domain_rows = [[
+        Paragraph(ar("الحكم"), S["tbl_hdr"]),
+        Paragraph(ar("الرسم البياني"), S["tbl_hdr"]),
+        Paragraph(ar("النسبة %"), S["tbl_hdr"]),
+        Paragraph(ar("المجال"), S["tbl_hdr"]),
+    ]]
+    for domain, dp, jd, jc in domain_records:
+        domain_rows.append([
+            Paragraph(ar(jd), S["tbl_cell"]),
+            _pbar(dp, jc, 5.9),
+            Paragraph(ar(f"{dp}%"), S["tbl_num"]),
+            Paragraph(ar(domain), S["tbl_cell"]),
+        ])
 
-    # رسم بياني مبسط للمجالات داخل ملف PDF
-    if domain_rows and len(domain_rows) > 1:
-        story.append(Spacer(1, 0.35*cm))
-        story.append(Paragraph(ar("رسم بياني للمجالات"), S["h2"]))
-        chart_rows = [[Paragraph(ar("النسبة"), S["tbl_hdr"]), Paragraph(ar("الرسم البياني"), S["tbl_hdr"]), Paragraph(ar("المجال"), S["tbl_hdr"] )]]
-        # إعادة بناء بيانات المجالات من الجدول أعلاه
-        for domain, items in ITEMS_STRUCTURE.items():
-            dcols = [f"بند {n}" for n, _ in items if f"بند {n}" in filtered_df.columns]
-            vals = []
-            for dc in dcols:
-                vals.extend(filtered_df[dc].map(JUDGMENT_WEIGHTS).dropna().tolist())
-            if vals:
-                dp = round((sum(vals)/(len(vals)*4))*100, 1)
-                jd = get_general_judgment(dp)
-                jc = JCOLORS.get(jd, colors.HexColor("#2563eb"))
-                chart_rows.append([
-                    Paragraph(ar(f"{dp}%"), S["tbl_num"]),
-                    _pbar(dp, jc, 7.2),
-                    Paragraph(ar(domain), S["tbl_cell"]),
-                ])
-        chart_tbl = Table(chart_rows, colWidths=[2.0*cm, 7.4*cm, 6.0*cm])
-        chart_tbl.setStyle(TableStyle([
+    if len(domain_rows) > 1:
+        dom_tbl = Table(domain_rows, colWidths=[3.5*cm, 6.1*cm, 2.1*cm, 4.5*cm], repeatRows=1)
+        dom_style = [
             ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#0f2044")),
             ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#f8fafc")]),
             ("BOX", (0,0), (-1,-1), 0.5, colors.HexColor("#e5e7eb")),
             ("INNERGRID", (0,0), (-1,-1), 0.35, colors.HexColor("#e5e7eb")),
+            ("TOPPADDING", (0,0), (-1,-1), 6),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 6),
             ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
-            ("TOPPADDING", (0,0), (-1,-1), 5),
-            ("BOTTOMPADDING", (0,0), (-1,-1), 5),
-        ]))
-        story.append(chart_tbl)
+        ]
+        for ri, (_, _, _, jc) in enumerate(domain_records, start=1):
+            dom_style.append(("TEXTCOLOR", (0, ri), (0, ri), jc))
+            dom_style.append(("FONTNAME", (0, ri), (0, ri), _reg_bold))
+            dom_style.append(("LINERIGHT", (3, ri), (3, ri), 3, jc))
+        dom_tbl.setStyle(TableStyle(dom_style))
+        story.append(dom_tbl)
+        story.append(Spacer(1, 0.25*cm))
 
     # رسم توزيع الأحكام الكلي
     item_cols_pdf = [f"بند {i}" for i in range(1,19) if f"بند {i}" in filtered_df.columns]
@@ -1471,19 +1524,22 @@ def show_analysis(df, allowed_dept):
         col_best, col_worst = st.columns(2)
 
         def _insight_card_html(title, rows_df, card_type="best"):
+            # مهم: لا نضع مسافات قبل وسوم HTML حتى لا يعرضها Markdown كنص/Code block
             rows_html = ""
             for rank, (_, row) in enumerate(rows_df.iterrows(), start=1):
-                rows_html += f"""
-                <div class="insight-row">
-                    <div class="insight-rank">{rank}</div>
-                    <div class="insight-name">{row['الاسم']}</div>
-                    <div class="insight-percent">{row['النسبة']}%</div>
-                </div>"""
-            return f"""
-            <div class="insight-wrap {card_type}">
-                <div class="insight-title">{title}</div>
-                {rows_html}
-            </div>"""
+                rows_html += (
+                    f'<div class="insight-row">'
+                    f'<div class="insight-rank">{rank}</div>'
+                    f'<div class="insight-name">{row["الاسم"]}</div>'
+                    f'<div class="insight-percent">{row["النسبة"]}%</div>'
+                    f'</div>'
+                )
+            return (
+                f'<div class="insight-wrap {card_type}">'
+                f'<div class="insight-title">{title}</div>'
+                f'{rows_html}'
+                f'</div>'
+            )
 
         with col_best:
             st.markdown(
@@ -1586,34 +1642,64 @@ def show_analysis(df, allowed_dept):
         with st.expander("📋 جدول تفصيلي للمعلمات"):
             st.dataframe(tdf, use_container_width=True, hide_index=True)
 
-    # ── 5b. ✅ جديد: المعلمات اللواتي لم تُسجَّل لهن زيارات ─────────────────
-    if allowed_dept != "الكل":
-        # نقارن المعلمات الموجودات في البيانات (كل المعلمات في القسم)
-        # مقابل اللواتي زُرن فعلاً (لهن سجلات زيارة صفية)
-        all_teachers_in_dept = df[
-            df["القسم الأكاديمي"].apply(normalize_text) == normalize_text(allowed_dept)
-        ]["اسم المعلمة"].dropna().unique()
+    # ── 5b. المعلمات اللواتي لم تُسجَّل لهن زيارة شهرية ─────────────────
+    if allowed_dept != "الكل" and "القسم الأكاديمي" in df.columns and "اسم المعلمة" in df.columns:
+        # المطلوب: كل شهر لكل معلمة زيارة.
+        # لذلك نفحص حسب السنة/الفصل/الشهر المختار، وإذا اختيرت معلمة محددة نفحصها وحدها فقط.
+        visit_scope = df[df["القسم الأكاديمي"].apply(normalize_text) == normalize_text(allowed_dept)].copy()
 
-        visited_teachers = filtered[
-            filtered.get("نوع السجل", pd.Series(["زيارة صفية"]*len(filtered))) == "زيارة صفية"
-        ]["اسم المعلمة"].dropna().unique() if "نوع السجل" in filtered.columns else filtered["اسم المعلمة"].dropna().unique()
+        if year != "الكل" and "السنة الدراسية" in visit_scope.columns:
+            visit_scope = visit_scope[visit_scope["السنة الدراسية"].astype(str) == str(year)]
+        if sem != "الكل" and "الفصل الدراسي" in visit_scope.columns:
+            visit_scope = visit_scope[visit_scope["الفصل الدراسي"].astype(str) == str(sem)]
+        if month != "الكل" and "الشهر" in visit_scope.columns:
+            visit_scope = visit_scope[visit_scope["الشهر"].astype(str) == str(month)]
 
-        not_visited = [t for t in all_teachers_in_dept if t not in visited_teachers]
+        if teacher != "الكل":
+            teachers_to_check = [teacher]
+            visit_scope = visit_scope[visit_scope["اسم المعلمة"].astype(str) == str(teacher)]
+        else:
+            teachers_to_check = sorted(
+                df[df["القسم الأكاديمي"].apply(normalize_text) == normalize_text(allowed_dept)]["اسم المعلمة"]
+                .dropna().astype(str).unique().tolist()
+            )
+
+        # نعتبر الزيارة مسجلة إذا كان نوع السجل زيارة صفية، أو إذا كان عمود الزائر يحتوي كلمة زيارة وليس تقييم/توأمة.
+        if "نوع السجل" in visit_scope.columns:
+            visit_mask = visit_scope["نوع السجل"].fillna("").astype(str).apply(normalize_text).str.contains("زياره صفيه|الزياره الصفيه", regex=True)
+        else:
+            visit_mask = pd.Series([False] * len(visit_scope), index=visit_scope.index)
+        if "الزائر" in visit_scope.columns:
+            visitor_text = visit_scope["الزائر"].fillna("").astype(str).apply(normalize_text)
+            visit_mask = visit_mask | (visitor_text.str.contains("زياره", regex=False) & ~visitor_text.str.contains("تقييم|توامه", regex=True))
+
+        visited_teachers = set(visit_scope.loc[visit_mask, "اسم المعلمة"].dropna().astype(str).tolist())
+        not_visited = [t for t in teachers_to_check if str(t) not in visited_teachers]
 
         if not_visited:
-            section_title("⚠️", "معلمات لم تُسجَّل لهن زيارة صفية")
-            st.markdown(f"""
-            <div style="background:#fff7ed; border:1px solid #fed7aa; border-radius:12px;
-                        padding:14px 18px; margin-bottom:16px;">
-                <div style="font-size:14px; font-weight:700; color:#9a3412; margin-bottom:8px;">
-                    ⚠️ عدد المعلمات دون زيارات: {len(not_visited)}
-                </div>""", unsafe_allow_html=True)
+            period_label = ""
+            if month != "الكل":
+                period_label += f" في شهر {month}"
+            if sem != "الكل":
+                period_label += f" / {sem}"
+            if year != "الكل":
+                period_label += f" / {year}"
+
+            section_title("⚠️", "معلمات لم تُسجَّل لهن زيارة صفية شهرية")
+            st.markdown(
+                f'<div style="background:#fff7ed; border:1px solid #fed7aa; border-radius:12px; padding:14px 18px; margin-bottom:16px;">'
+                f'<div style="font-size:14px; font-weight:700; color:#9a3412; margin-bottom:8px;">'
+                f'⚠️ عدد المعلمات دون زيارات: {len(not_visited)}{period_label}</div>',
+                unsafe_allow_html=True
+            )
             for t in not_visited:
-                st.markdown(f"""
-                <div class="alert-card">
-                    <span class="alert-name">👩‍🏫 {t}</span>
-                    <span class="alert-info">لا توجد زيارات مسجلة</span>
-                </div>""", unsafe_allow_html=True)
+                st.markdown(
+                    f'<div class="alert-card">'
+                    f'<span class="alert-name">👩‍🏫 {t}</span>'
+                    f'<span class="alert-info">لا توجد زيارة صفية مسجلة للفترة المختارة</span>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
             st.markdown("</div>", unsafe_allow_html=True)
 
     # ── 6. DEPARTMENTS — للمدير فقط ──────────────────────────────────────────

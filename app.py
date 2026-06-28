@@ -27,13 +27,15 @@ def _ensure_pdf_libs():
 
 _ensure_pdf_libs()
 
-# ── PDF ──────────────────────────────────────────────────────────────────────
+# ── PDF — استيراد بعد التثبيت مباشرة ────────────────────────────────────────
+PDF_READY = False
 try:
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors
     from reportlab.lib.units import cm
     from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
-                                    Table, TableStyle, HRFlowable)
+                                    Table, TableStyle, HRFlowable,
+                                    BaseDocTemplate, Frame, PageTemplate)
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.enums import TA_RIGHT, TA_CENTER
     from reportlab.pdfbase import pdfmetrics
@@ -42,7 +44,24 @@ try:
     from bidi.algorithm import get_display
     PDF_READY = True
 except ImportError:
-    PDF_READY = False
+    # حاول مرة ثانية بعد التثبيت
+    try:
+        _ensure_pdf_libs()
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib import colors
+        from reportlab.lib.units import cm
+        from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
+                                        Table, TableStyle, HRFlowable,
+                                        BaseDocTemplate, Frame, PageTemplate)
+        from reportlab.lib.styles import ParagraphStyle
+        from reportlab.lib.enums import TA_RIGHT, TA_CENTER
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+        import arabic_reshaper
+        from bidi.algorithm import get_display
+        PDF_READY = True
+    except Exception:
+        PDF_READY = False
 
 # تسجيل خطوط عربية (يعمل مرة واحدة)
 if PDF_READY:
@@ -632,7 +651,6 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
     HEADER_H = 3.2 * cm   # ارتفاع منطقة الشعار
     TOP_MARGIN = HEADER_H + 0.5 * cm
 
-    from reportlab.platypus import BaseDocTemplate, Frame, PageTemplate
     from reportlab.lib.utils import ImageReader
 
     # دالة رسم الشعار في رأس كل صفحة

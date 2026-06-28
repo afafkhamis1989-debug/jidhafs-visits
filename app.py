@@ -862,8 +862,13 @@ def show_analysis(df, allowed_dept):
         for dname, grp in filtered.groupby("القسم الأكاديمي"):
             dp = calculate_percentage(grp)
 
-            # عدد المعلمات الفريدات في القسم
-            n_teachers_dept = grp["اسم المعلمة"].nunique() if "اسم المعلمة" in grp.columns else len(grp)
+            # عدد المعلمات الحقيقي من كل البيانات (مو بس الفترة المفلترة)
+            if "اسم المعلمة" in df.columns and "القسم الأكاديمي" in df.columns:
+                n_teachers_dept = df[
+                    df["القسم الأكاديمي"].apply(normalize_text) == normalize_text(dname)
+                ]["اسم المعلمة"].nunique()
+            else:
+                n_teachers_dept = grp["اسم المعلمة"].nunique() if "اسم المعلمة" in grp.columns else len(grp)
 
             # نسبة "يتجاوز التوقعات بكثير" من كل الأحكام في القسم
             all_judgments = []

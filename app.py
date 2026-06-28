@@ -9,7 +9,7 @@ import os
 import sys
 import subprocess
 
-PATCH_VERSION = "REAL7_SEMESTER_COMPARE_RECORDS_FIXED"
+PATCH_VERSION = "REAL8_VISIT_COMPLIANCE_TEACHERS_REFERENCE"
 
 # ✅ PATCH_VERSION: 2026-06-28_REAL_FIX_HTML_MONTHLY_PDF_NOTES_SUPPORT_SELF_ONLY_REAL2
 # ✅ REAL2: notes are filtered by record type; support/proposals only from self-evaluation rows
@@ -143,6 +143,13 @@ if PDF_READY:
         PDF_ERROR = f"فشل تجهيز الخط العربي: {e}"
 
 DEFAULT_EXCEL_URL = "https://moebh-my.sharepoint.com/:x:/g/personal/890302057_moe_bh/IQARg9ekg-gGR6izAPSeAlzTATuVdP8MoMG5g0O9aOIlGzI?e=vQIoab&download=1"
+
+# ملف قائمة الكادر المرجعية: يتم تحديثه خارج الكود عند تغيير الأسماء أو الوظائف
+TEACHERS_REFERENCE_FILE = "Classroom_Visits_System.xlsx"
+TEACHERS_REFERENCE_SHEET = "Teachers"
+# رابط Google Sheet المرجعي، ويُستخدم إذا كان متاحاً للنشر/التصدير
+TEACHERS_GOOGLE_SHEET_EXPORT_URL = "https://docs.google.com/spreadsheets/d/1o_j5LlwROGITpakLNFqvvSJpLFXVAf3tdFcvCuR9q2w/export?format=xlsx"
+
 HEADER_PATH = "header.png"
 
 st.set_page_config(
@@ -468,6 +475,22 @@ st.markdown("""
     margin-bottom:14px;
 }
 
+
+.compliance-card{
+    background:#ffffff;
+    border:1px solid #e5e7eb;
+    border-radius:16px;
+    padding:16px 18px;
+    box-shadow:0 2px 12px rgba(15,32,68,0.06);
+    margin-bottom:12px;
+    border-right:5px solid #2563eb;
+}
+.compliance-card.danger{border-right-color:#f97316; background:#fff7ed;}
+.compliance-card.success{border-right-color:#10b981; background:#f0fdf4;}
+.compliance-title{font-size:15px;font-weight:900;color:#0f2044;margin-bottom:6px;}
+.compliance-num{font-size:30px;font-weight:900;color:#111827;line-height:1;}
+.compliance-sub{font-size:12px;color:#6b7280;margin-top:6px;}
+
 .footer {
     background: #0f2044; border-radius: 12px; padding: 16px 28px;
     margin-top: 32px; display: flex; justify-content: space-between; align-items: center;
@@ -694,6 +717,221 @@ def get_forms_data(uploaded_file=None):
     else:
         raw = load_excel_from_url(get_excel_url())
     return standardize_ms_forms_dataframe(raw)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def load_teachers_reference():
+    """قراءة قائمة الكادر المرجعية من ملف Teachers حتى لا تعتمد المتابعة على أسماء الزيارات فقط."""
+    errors = []
+    base_dir = _safe_base_dir()
+    local_candidates = [
+        os.path.join(base_dir, TEACHERS_REFERENCE_FILE),
+        os.path.join(os.getcwd(), TEACHERS_REFERENCE_FILE),
+        "/mnt/data/Classroom_Visits_System.xlsx",
+    ]
+
+    # أولاً: محاولة قراءة الملف المحلي المرفوع مع المشروع
+    for path in local_candidates:
+        try:
+            if os.path.exists(path):
+                raw = pd.read_excel(path, sheet_name=TEACHERS_REFERENCE_SHEET)
+                return standardize_teachers_reference(raw)
+        except Exception as e:
+            errors.append(f"{path}: {e}")
+
+    # ثانياً: محاولة قراءة Google Sheet إذا كان يسمح بالتصدير
+    try:
+        res = requests.get(TEACHERS_GOOGLE_SHEET_EXPORT_URL, timeout=25)
+        res.raise_for_status()
+        raw = pd.read_excel(BytesIO(res.content), sheet_name=TEACHERS_REFERENCE_SHEET)
+        return standardize_teachers_reference(raw)
+    except Exception as e:
+        errors.append(f"Google Sheet: {e}")
+
+    # إذا فشل كل شيء، نرجع جدولاً فارغاً مع رسالة لاحقاً
+    return pd.DataFrame(columns=["القسم الأكاديمي", "اسم المعلمة", "الوظيفة", "الحالة"])
+
+
+def standardize_teachers_reference(raw_df):
+    df_ref = raw_df.copy()
+    df_ref.columns = [clean_col_name(c) for c in df_ref.columns]
+
+    out = pd.DataFrame(index=df_ref.index)
+    out["القسم الأكاديمي"] = combine_first_non_empty(df_ref, ["القسم الأكاديمي", "القسم", "الأقسام الأكاديمية"])
+    out["اسم المعلمة"] = combine_first_non_empty(df_ref, ["اسم المعلمة", "اسم المعلم", "الاسم"])
+    out["الوظيفة"] = combine_first_non_empty(df_ref, ["الوظيفة", "المسمى الوظيفي", "الدور"])
+    out["الحالة"] = combine_first_non_empty(df_ref, ["الحالة", "Status"])
+
+    out["القسم الأكاديمي"] = out["القسم الأكاديمي"].astype("string").str.strip()
+    out["اسم المعلمة"] = out["اسم المعلمة"].astype("string").str.strip()
+    out["الوظيفة"] = out["الوظيفة"].fillna("معلم").astype("string").str.strip()
+    out["الحالة"] = out["الحالة"].fillna("نشط").astype("string").str.strip()
+
+    out = out[out["اسم المعلمة"].notna() & out["اسم المعلمة"].astype(str).str.strip().ne("")]
+    out = out[out["القسم الأكاديمي"].notna() & out["القسم الأكاديمي"].astype(str).str.strip().ne("")]
+    # نستبعد غير النشطين فقط إذا تم إدخال الحالة صراحة
+    out = out[~out["الحالة"].astype(str).apply(normalize_text).str.contains("غير نشط|منقول|مستبعد|موقوف", regex=True, na=False)]
+    return out.reset_index(drop=True)
+
+
+def _is_regular_teacher_job(job):
+    j = normalize_text(job).replace(" ", "")
+    return j == "معلم" or j == "معلمه"
+
+
+def _is_middle_leader_job(job):
+    j = normalize_text(job)
+    return any(x in j for x in ["معلم اول", "معلمه اولى", "منسق", "رئيس", "رئيسه"])
+
+
+def _combined_visit_text(df_part):
+    combined = pd.Series([""] * len(df_part), index=df_part.index, dtype="string")
+    for c in ["نوع السجل", "الزائر"]:
+        if c in df_part.columns:
+            combined = combined.fillna("") + " " + df_part[c].fillna("").astype(str)
+    return combined.astype(str).apply(normalize_text)
+
+
+def _is_teacher_monthly_visit(df_part):
+    """زيارات شهرية للمعلمين: قيادة وسطى/عليا/أيام حية لجميع المعلمات، مع استبعاد التقييم الذاتي والتوأمة."""
+    txt = _combined_visit_text(df_part)
+    not_self_twin = ~txt.str.contains("تقييم ذاتي|التقييم الذاتي|توام|توأم", regex=True, na=False)
+    teacher_visit = txt.str.contains("جميع المعلمات|لجميع المعلمات|القياده الوسطي", regex=True, na=False)
+    return teacher_visit & not_self_twin
+
+
+def _is_middle_leader_monthly_visit(df_part):
+    """زيارات شهرية للقيادة الوسطى: قيادة عليا/أيام حية للقيادة الوسطى."""
+    txt = _combined_visit_text(df_part)
+    not_self_twin = ~txt.str.contains("تقييم ذاتي|التقييم الذاتي|توام|توأم", regex=True, na=False)
+    leader_visit = txt.str.contains("القياده العليا للقياده الوسطي|الايام الحيه للقياده الوسطي|القياده الوسطى", regex=True, na=False)
+    return leader_visit & not_self_twin
+
+
+def _is_self_evaluation(df_part):
+    txt = _combined_visit_text(df_part)
+    return txt.str.contains("تقييم ذاتي|التقييم الذاتي|استماره التقييم الذاتي", regex=True, na=False)
+
+
+def _selected_months_for_compliance(visits_scope, selected_month, selected_sem):
+    if selected_month != "الكل":
+        return [selected_month]
+    if selected_sem != "الكل":
+        sem_norm = normalize_text(selected_sem)
+        if "الاول" in sem_norm or "الأول" in str(selected_sem):
+            candidates = ["سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"]
+        elif "الثاني" in sem_norm:
+            candidates = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو"]
+        else:
+            candidates = MONTHS
+    else:
+        candidates = MONTHS
+    if "الشهر" in visits_scope.columns:
+        active = [m for m in candidates if m in visits_scope["الشهر"].dropna().astype(str).unique().tolist()]
+        return active or candidates
+    return candidates
+
+
+def _selected_semesters_for_self_eval(visits_scope, selected_sem):
+    if selected_sem != "الكل":
+        return [selected_sem]
+    if "الفصل الدراسي" in visits_scope.columns:
+        sems = [s for s in visits_scope["الفصل الدراسي"].dropna().astype(str).unique().tolist() if s.strip()]
+        return sorted(sems) if sems else ["الفصل الدراسي الأول", "الفصل الدراسي الثاني"]
+    return ["الفصل الدراسي الأول", "الفصل الدراسي الثاني"]
+
+
+def build_visit_compliance(visits_df, teachers_df, allowed_dept, selected_dept, year, sem, month):
+    """يبني جدول المتابعة: زيارة شهرية للمعلمين/القيادة الوسطى + تقييم ذاتي فصلي للجميع."""
+    if teachers_df is None or teachers_df.empty:
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+
+    staff = teachers_df.copy()
+    if allowed_dept != "الكل":
+        staff = staff[staff["القسم الأكاديمي"].apply(normalize_text) == normalize_text(allowed_dept)]
+    elif selected_dept != "الكل":
+        staff = staff[staff["القسم الأكاديمي"].astype(str) == str(selected_dept)]
+
+    visits_scope = visits_df.copy()
+    if year != "الكل" and "السنة الدراسية" in visits_scope.columns:
+        visits_scope = visits_scope[visits_scope["السنة الدراسية"].astype(str) == str(year)]
+    if allowed_dept != "الكل" and "القسم الأكاديمي" in visits_scope.columns:
+        visits_scope = visits_scope[visits_scope["القسم الأكاديمي"].apply(normalize_text) == normalize_text(allowed_dept)]
+    elif selected_dept != "الكل" and "القسم الأكاديمي" in visits_scope.columns:
+        visits_scope = visits_scope[visits_scope["القسم الأكاديمي"].astype(str) == str(selected_dept)]
+
+    months_to_check = _selected_months_for_compliance(visits_scope, month, sem)
+    sems_to_check = _selected_semesters_for_self_eval(visits_scope, sem)
+
+    # إذا تم اختيار فصل، نطبقه فقط على تقييم ذاتي وعلى اختيار الأشهر، أما الزيارة الشهرية تعتمد على الشهر المختار/أشهر الفصل.
+    monthly_rows = []
+    regular_staff = staff[staff["الوظيفة"].apply(_is_regular_teacher_job)].copy()
+    leader_staff = staff[staff["الوظيفة"].apply(_is_middle_leader_job)].copy()
+
+    for _, person in regular_staff.iterrows():
+        for m in months_to_check:
+            subset = visits_scope[
+                (visits_scope.get("اسم المعلمة", pd.Series([], dtype=str)).astype(str).apply(normalize_text) == normalize_text(person["اسم المعلمة"])) &
+                (visits_scope.get("الشهر", pd.Series([], dtype=str)).astype(str) == str(m))
+            ]
+            has_visit = bool(len(subset) and _is_teacher_monthly_visit(subset).any())
+            if not has_visit:
+                monthly_rows.append({
+                    "نوع المتابعة": "زيارة شهرية للمعلمات",
+                    "الشهر": m,
+                    "القسم الأكاديمي": person["القسم الأكاديمي"],
+                    "اسم المعلمة": person["اسم المعلمة"],
+                    "الوظيفة": person["الوظيفة"],
+                    "المطلوب": "زيارة قيادة وسطى/زيارة للمعلمات",
+                    "الحالة": "ناقصة",
+                })
+
+    for _, person in leader_staff.iterrows():
+        for m in months_to_check:
+            subset = visits_scope[
+                (visits_scope.get("اسم المعلمة", pd.Series([], dtype=str)).astype(str).apply(normalize_text) == normalize_text(person["اسم المعلمة"])) &
+                (visits_scope.get("الشهر", pd.Series([], dtype=str)).astype(str) == str(m))
+            ]
+            has_visit = bool(len(subset) and _is_middle_leader_monthly_visit(subset).any())
+            if not has_visit:
+                monthly_rows.append({
+                    "نوع المتابعة": "زيارة شهرية للقيادة الوسطى",
+                    "الشهر": m,
+                    "القسم الأكاديمي": person["القسم الأكاديمي"],
+                    "اسم المعلمة": person["اسم المعلمة"],
+                    "الوظيفة": person["الوظيفة"],
+                    "المطلوب": "زيارة قيادة عليا للقيادة الوسطى",
+                    "الحالة": "ناقصة",
+                })
+
+    self_rows = []
+    for _, person in staff.iterrows():
+        for s in sems_to_check:
+            subset = visits_scope[
+                (visits_scope.get("اسم المعلمة", pd.Series([], dtype=str)).astype(str).apply(normalize_text) == normalize_text(person["اسم المعلمة"])) &
+                (visits_scope.get("الفصل الدراسي", pd.Series([], dtype=str)).astype(str) == str(s))
+            ]
+            has_self = bool(len(subset) and _is_self_evaluation(subset).any())
+            if not has_self:
+                self_rows.append({
+                    "نوع المتابعة": "تقييم ذاتي فصلي",
+                    "الفصل الدراسي": s,
+                    "القسم الأكاديمي": person["القسم الأكاديمي"],
+                    "اسم المعلمة": person["اسم المعلمة"],
+                    "الوظيفة": person["الوظيفة"],
+                    "المطلوب": "تقييم ذاتي مرة كل فصل",
+                    "الحالة": "ناقصة",
+                })
+
+    monthly_missing = pd.DataFrame(monthly_rows)
+    self_missing = pd.DataFrame(self_rows)
+
+    summary_rows = [
+        {"المؤشر": "المعلمات دون زيارة شهرية", "العدد": int((monthly_missing["نوع المتابعة"] == "زيارة شهرية للمعلمات").sum()) if not monthly_missing.empty else 0},
+        {"المؤشر": "القيادة الوسطى دون زيارة شهرية", "العدد": int((monthly_missing["نوع المتابعة"] == "زيارة شهرية للقيادة الوسطى").sum()) if not monthly_missing.empty else 0},
+        {"المؤشر": "لم يُكملوا التقييم الذاتي الفصلي", "العدد": len(self_missing)},
+    ]
+    return pd.DataFrame(summary_rows), monthly_missing, self_missing
 
 
 def calculate_percentage(df):
@@ -1779,65 +2017,51 @@ def show_analysis(df, allowed_dept):
         with st.expander("📋 جدول تفصيلي للمعلمات"):
             st.dataframe(tdf, use_container_width=True, hide_index=True)
 
-    # ── 5b. المعلمات اللواتي لم تُسجَّل لهن زيارة شهرية ─────────────────
-    if allowed_dept != "الكل" and "القسم الأكاديمي" in df.columns and "اسم المعلمة" in df.columns:
-        # المطلوب: كل شهر لكل معلمة زيارة.
-        # لذلك نفحص حسب السنة/الفصل/الشهر المختار، وإذا اختيرت معلمة محددة نفحصها وحدها فقط.
-        visit_scope = df[df["القسم الأكاديمي"].apply(normalize_text) == normalize_text(allowed_dept)].copy()
+    # ── 5b. متابعة الالتزام بالزيارات والتقييم الذاتي من ملف Teachers ──────────────
+    try:
+        teachers_ref_df = load_teachers_reference()
+    except Exception:
+        teachers_ref_df = pd.DataFrame()
 
-        if year != "الكل" and "السنة الدراسية" in visit_scope.columns:
-            visit_scope = visit_scope[visit_scope["السنة الدراسية"].astype(str) == str(year)]
-        if sem != "الكل" and "الفصل الدراسي" in visit_scope.columns:
-            visit_scope = visit_scope[visit_scope["الفصل الدراسي"].astype(str) == str(sem)]
-        if month != "الكل" and "الشهر" in visit_scope.columns:
-            visit_scope = visit_scope[visit_scope["الشهر"].astype(str) == str(month)]
+    if teachers_ref_df is not None and not teachers_ref_df.empty:
+        section_title("📋", "متابعة الالتزام بالزيارات والتقييم الذاتي")
+        selected_dept_for_compliance = dept if allowed_dept == "الكل" and 'dept' in locals() else "الكل"
+        comp_summary, monthly_missing_df, self_missing_df = build_visit_compliance(
+            df, teachers_ref_df, allowed_dept, selected_dept_for_compliance, year, sem, month
+        )
 
-        if teacher != "الكل":
-            teachers_to_check = [teacher]
-            visit_scope = visit_scope[visit_scope["اسم المعلمة"].astype(str) == str(teacher)]
+        c_m1, c_m2, c_m3 = st.columns(3)
+        summary_dict = dict(zip(comp_summary["المؤشر"], comp_summary["العدد"])) if not comp_summary.empty else {}
+        with c_m1:
+            n1 = summary_dict.get("المعلمات دون زيارة شهرية", 0)
+            st.markdown(f'<div class="compliance-card {"danger" if n1 else "success"}"><div class="compliance-title">زيارة شهرية للمعلمات</div><div class="compliance-num">{n1}</div><div class="compliance-sub">الوظيفة: معلم</div></div>', unsafe_allow_html=True)
+        with c_m2:
+            n2 = summary_dict.get("القيادة الوسطى دون زيارة شهرية", 0)
+            st.markdown(f'<div class="compliance-card {"danger" if n2 else "success"}"><div class="compliance-title">زيارة شهرية للقيادة الوسطى</div><div class="compliance-num">{n2}</div><div class="compliance-sub">معلم أول / منسق / رئيس قسم</div></div>', unsafe_allow_html=True)
+        with c_m3:
+            n3 = summary_dict.get("لم يُكملوا التقييم الذاتي الفصلي", 0)
+            st.markdown(f'<div class="compliance-card {"danger" if n3 else "success"}"><div class="compliance-title">التقييم الذاتي الفصلي</div><div class="compliance-num">{n3}</div><div class="compliance-sub">مرة واحدة كل فصل للجميع</div></div>', unsafe_allow_html=True)
+
+        if monthly_missing_df.empty and self_missing_df.empty:
+            st.success("✅ جميع متطلبات الزيارات الشهرية والتقييم الذاتي مكتملة حسب الفلاتر المختارة.")
         else:
-            teachers_to_check = sorted(
-                df[df["القسم الأكاديمي"].apply(normalize_text) == normalize_text(allowed_dept)]["اسم المعلمة"]
-                .dropna().astype(str).unique().tolist()
-            )
-
-        # نعتبر الزيارة مسجلة إذا كان نوع السجل زيارة صفية، أو إذا كان عمود الزائر يحتوي كلمة زيارة وليس تقييم/توأمة.
-        if "نوع السجل" in visit_scope.columns:
-            visit_mask = visit_scope["نوع السجل"].fillna("").astype(str).apply(normalize_text).str.contains("زياره صفيه|الزياره الصفيه", regex=True)
-        else:
-            visit_mask = pd.Series([False] * len(visit_scope), index=visit_scope.index)
-        if "الزائر" in visit_scope.columns:
-            visitor_text = visit_scope["الزائر"].fillna("").astype(str).apply(normalize_text)
-            visit_mask = visit_mask | (visitor_text.str.contains("زياره", regex=False) & ~visitor_text.str.contains("تقييم|توامه", regex=True))
-
-        visited_teachers = set(visit_scope.loc[visit_mask, "اسم المعلمة"].dropna().astype(str).tolist())
-        not_visited = [t for t in teachers_to_check if str(t) not in visited_teachers]
-
-        if not_visited:
-            period_label = ""
-            if month != "الكل":
-                period_label += f" في شهر {month}"
-            if sem != "الكل":
-                period_label += f" / {sem}"
-            if year != "الكل":
-                period_label += f" / {year}"
-
-            section_title("⚠️", "معلمات لم تُسجَّل لهن زيارة صفية شهرية")
-            st.markdown(
-                f'<div style="background:#fff7ed; border:1px solid #fed7aa; border-radius:12px; padding:14px 18px; margin-bottom:16px;">'
-                f'<div style="font-size:14px; font-weight:700; color:#9a3412; margin-bottom:8px;">'
-                f'⚠️ عدد المعلمات دون زيارات: {len(not_visited)}{period_label}</div>',
-                unsafe_allow_html=True
-            )
-            for t in not_visited:
-                st.markdown(
-                    f'<div class="alert-card">'
-                    f'<span class="alert-name">👩‍🏫 {t}</span>'
-                    f'<span class="alert-info">لا توجد زيارة صفية مسجلة للفترة المختارة</span>'
-                    f'</div>',
-                    unsafe_allow_html=True
-                )
-            st.markdown("</div>", unsafe_allow_html=True)
+            tab_monthly, tab_self = st.tabs(["🗓️ الزيارات الشهرية الناقصة", "📝 التقييم الذاتي الناقص"])
+            with tab_monthly:
+                if monthly_missing_df.empty:
+                    st.success("✅ لا توجد زيارات شهرية ناقصة حسب الفلاتر المختارة.")
+                else:
+                    st.dataframe(monthly_missing_df, use_container_width=True, hide_index=True)
+                    csv_monthly = monthly_missing_df.to_csv(index=False).encode("utf-8-sig")
+                    st.download_button("⬇️ تحميل الزيارات الشهرية الناقصة CSV", csv_monthly, "missing_monthly_visits.csv", "text/csv", key="dl_missing_monthly")
+            with tab_self:
+                if self_missing_df.empty:
+                    st.success("✅ لا يوجد نقص في التقييم الذاتي حسب الفلاتر المختارة.")
+                else:
+                    st.dataframe(self_missing_df, use_container_width=True, hide_index=True)
+                    csv_self = self_missing_df.to_csv(index=False).encode("utf-8-sig")
+                    st.download_button("⬇️ تحميل التقييم الذاتي الناقص CSV", csv_self, "missing_self_evaluation.csv", "text/csv", key="dl_missing_self")
+    else:
+        st.warning("⚠️ لم يتم العثور على ملف قائمة الكادر Classroom_Visits_System.xlsx / Teachers، لذلك لا يمكن حساب من لم تُسجل لهم زيارة من خارج بيانات الزيارات.")
 
     # ── 6. DEPARTMENTS — للمدير فقط ──────────────────────────────────────────
     if allowed_dept == "الكل" and "القسم الأكاديمي" in filtered.columns:

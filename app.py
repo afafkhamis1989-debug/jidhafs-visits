@@ -1,3 +1,4 @@
+# نسخة مصححة: إصلاح بطاقات أفضل/أضعف البنود - 2026-06-28
 import streamlit as st
 import pandas as pd
 import requests
@@ -1471,19 +1472,27 @@ def show_analysis(df, allowed_dept):
         col_best, col_worst = st.columns(2)
 
         def _insight_card_html(title, rows_df, card_type="best"):
-            rows_html = ""
+            import html
+            rows_html_parts = []
             for rank, (_, row) in enumerate(rows_df.iterrows(), start=1):
-                rows_html += f"""
-                <div class="insight-row">
-                    <div class="insight-rank">{rank}</div>
-                    <div class="insight-name">{row['الاسم']}</div>
-                    <div class="insight-percent">{row['النسبة']}%</div>
-                </div>"""
-            return f"""
-            <div class="insight-wrap {card_type}">
-                <div class="insight-title">{title}</div>
-                {rows_html}
-            </div>"""
+                item_name = html.escape(str(row["الاسم"]))
+                item_pct = html.escape(str(row["النسبة"]))
+                rows_html_parts.append(
+                    f'<div class="insight-row">'
+                    f'<div class="insight-rank">{rank}</div>'
+                    f'<div class="insight-name">{item_name}</div>'
+                    f'<div class="insight-percent">{item_pct}%</div>'
+                    f'</div>'
+                )
+            rows_html = "".join(rows_html_parts)
+            safe_title = html.escape(str(title))
+            safe_card_type = "best" if card_type == "best" else "weak"
+            return (
+                f'<div class="insight-wrap {safe_card_type}">'
+                f'<div class="insight-title">{safe_title}</div>'
+                f'{rows_html}'
+                f'</div>'
+            )
 
         with col_best:
             st.markdown(

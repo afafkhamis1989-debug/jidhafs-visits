@@ -9,11 +9,12 @@ import os
 import sys
 import subprocess
 
-PATCH_VERSION = "REAL5_SELF_NOTES_FUZZY_COLUMNS_FIXED"
+PATCH_VERSION = "REAL6_SEMESTER_COMPARE_MONTHLY_AVERAGE_FIXED"
 
 # ✅ PATCH_VERSION: 2026-06-28_REAL_FIX_HTML_MONTHLY_PDF_NOTES_SUPPORT_SELF_ONLY_REAL2
 # ✅ REAL2: notes are filtered by record type; support/proposals only from self-evaluation rows
 # ✅ REAL3: hide qualitative notes when teacher=all; comparisons ignore teacher filter
+# ✅ REAL6: semester comparison uses the same monthly averages shown in the monthly trend chart
 
 # ── PDF — استيراد المكتبات والخط العربي تلقائياً ─────────────────────────────
 # ملاحظة:
@@ -2021,10 +2022,48 @@ def show_analysis(df, allowed_dept):
 
             sem_results = []
             domain_by_sem = {}
+
+            # REAL6: حتى تكون مقارنة الفصلين منطقية ومطابقة للرسم الشهري،
+            # نحسب نسبة كل فصل كمتوسط نسب الأشهر الظاهرة في ذلك الفصل،
+            # وليس كمتوسط مباشر لكل السجلات؛ لأن عدد الزيارات قد يختلف من شهر لآخر.
+            semester_months_map = {
+                "الفصل الدراسي الأول": ["سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"],
+                "الفصل الدراسي الثاني": ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو"],
+            }
+
+            def _semester_order_value(sem_name):
+                s = normalize_text(str(sem_name))
+                if "الاول" in s or "الأول" in str(sem_name):
+                    return 1
+                if "الثاني" in s:
+                    return 2
+                return 99
+
+            def _semester_pct_from_monthly_average(grp, sem_name):
+                if grp.empty:
+                    return 0
+                if "الشهر" not in grp.columns:
+                    return calculate_percentage(grp)
+
+                allowed_months = semester_months_map.get(str(sem_name).strip())
+                month_scores = []
+                month_source = grp.copy()
+                if allowed_months:
+                    month_source = month_source[month_source["الشهر"].astype(str).isin(allowed_months)]
+
+                for m in MONTHS:
+                    if allowed_months and m not in allowed_months:
+                        continue
+                    mg = month_source[month_source["الشهر"].astype(str) == m]
+                    if not mg.empty:
+                        month_scores.append(calculate_percentage(mg))
+
+                return round(sum(month_scores) / len(month_scores), 1) if month_scores else calculate_percentage(grp)
+
             for sem, grp in df_compare.groupby("الفصل الدراسي"):
-                sp = calculate_percentage(grp)
-                sem_results.append({"الفصل": str(sem), "النسبة": sp, "عدد السجلات": len(grp)})
-                # نسب المجالات لكل فصل
+                sp = _semester_pct_from_monthly_average(grp, sem)
+                sem_results.append({"الفصل": str(sem), "النسبة": sp, "عدد السجلات": len(grp), "ترتيب": _semester_order_value(sem)})
+                # نسب المجالات لكل فصل: تبقى محسوبة من السجلات حتى تعكس تفاصيل المجال داخل الفصل.
                 for domain, items in ITEMS_STRUCTURE.items():
                     dcols = [f"بند {n}" for n, _ in items if f"بند {n}" in grp.columns]
                     vals = []
@@ -2034,6 +2073,8 @@ def show_analysis(df, allowed_dept):
                     if sem not in domain_by_sem:
                         domain_by_sem[sem] = {}
                     domain_by_sem[sem][domain] = dp2
+
+            sem_results = sorted(sem_results, key=lambda r: r.get("ترتيب", 99))
 
             if len(sem_results) >= 2:
                 col_s1, col_s2 = st.columns(2)
@@ -2524,6 +2565,7 @@ st.markdown("""
     <span>تصميم وبرمجة: <span class="highlight">أ. عفاف حسين</span></span>
 </div>
 """, unsafe_allow_html=True)
+
 
 
 

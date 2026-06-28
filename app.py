@@ -898,32 +898,29 @@ def show_analysis(df, allowed_dept):
         # شرح المنهجية
 
 
-        # ── الرسم البياني مرتّب حسب النقاط المركّبة ─────────────────────────
-        ddf_chart = ddf.sort_values("النقاط المركّبة", ascending=True)
-        colors_dept = [JUDGMENT_COLORS.get(get_general_judgment(p), "#2563eb") for p in ddf_chart["نسبة الأداء %"]]
-        fig_d = make_rtl_bar_h(
-            ddf_chart["القسم"].tolist(),
-            ddf_chart["نسبة الأداء %"].tolist(),
-            colors_dept,
-            label_fontsize=13,
-            right_margin=240,
-        )
-        fig_d.update_layout(height=max(320, len(ddf)*48))
-        st.plotly_chart(fig_d, use_container_width=True)
-
-        # ── بطاقات الترتيب المركّب ──────────────────────────────────────────
         st.markdown("<div style='margin-top:4px;'>", unsafe_allow_html=True)
         for i, row in ddf.iterrows():
             medal = "🥇" if i == 1 else ("🥈" if i == 2 else ("🥉" if i == 3 else f"#{i}"))
             bar_color = JUDGMENT_COLORS.get(row["الحكم"], "#2563eb")
+            pct = row["نسبة الأداء %"]
             st.markdown(f"""
-            <div class="rank-card" style="border-right: 4px solid {bar_color};">
-                <div class="rank-num">{medal}</div>
-                <div class="rank-info">
-                    <div class="rank-name">{row['القسم']}</div>
-                    <div class="rank-sub">{row['عدد المعلمات']} معلمة</div>
+            <div class="rank-card" style="border-right: 4px solid {bar_color}; flex-direction: column; align-items: stretch; gap: 10px;">
+                <div style="display:flex; align-items:center; justify-content:space-between;">
+                    <div style="display:flex; align-items:center; gap:14px;">
+                        <div class="rank-num">{medal}</div>
+                        <div class="rank-info">
+                            <div class="rank-name">{row['القسم']}</div>
+                            <div class="rank-sub">{row['عدد المعلمات']} معلمة</div>
+                        </div>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:12px;">
+                        <div style="font-size:20px; font-weight:900; color:{bar_color}">{pct}%</div>
+                        {judgment_badge(row['الحكم'])}
+                    </div>
                 </div>
-                {judgment_badge(row['الحكم'])}
+                <div class="progress-bar-bg">
+                    <div class="progress-bar-fill" style="width:{pct}%; background:{bar_color};"></div>
+                </div>
             </div>""", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 

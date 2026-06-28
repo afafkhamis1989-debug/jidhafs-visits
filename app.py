@@ -916,22 +916,14 @@ def show_analysis(df, allowed_dept):
         for i, row in ddf.iterrows():
             medal = "🥇" if i == 1 else ("🥈" if i == 2 else ("🥉" if i == 3 else f"#{i}"))
             bar_color = JUDGMENT_COLORS.get(row["الحكم"], "#2563eb")
-            sf_label = {60:"صغير جداً", 75:"صغير", 88:"متوسط", 100:"كبير"}.get(row["علاوة الحجم"], "")
             st.markdown(f"""
             <div class="rank-card" style="border-right: 4px solid {bar_color};">
                 <div class="rank-num">{medal}</div>
                 <div class="rank-info">
                     <div class="rank-name">{row['القسم']}</div>
-                    <div class="rank-sub">
-                        {row['عدد المعلمات']} معلمة ({sf_label}) ·
-                        أداء: {row['نسبة الأداء %']}% ·
-                        تميز: {row['% يتجاوز بكثير']}%
-                    </div>
+                    <div class="rank-sub">{row['عدد المعلمات']} معلمة</div>
                 </div>
-                <div style="text-align:center; min-width:72px;">
-                    <div style="font-size:20px; font-weight:900; color:{bar_color}">{row['النقاط المركّبة']}</div>
-                    <div style="font-size:10px; color:#6b7280; font-weight:600;">نقطة مركّبة</div>
-                </div>
+                {judgment_badge(row['الحكم'])}
             </div>""", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 

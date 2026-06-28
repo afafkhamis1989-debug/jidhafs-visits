@@ -9,7 +9,7 @@ import os
 import sys
 import subprocess
 
-# ✅ PATCH_VERSION: 2026-06-28_REAL_FIX_HTML_MONTHLY_PDF_NOTES_CORRECT_BY_TYPE_SECTION_ADMIN
+# ✅ PATCH_VERSION: 2026-06-28_REAL_FIX_HTML_MONTHLY_PDF_NOTES_SUPPORT_SELF_ONLY
 
 # ── PDF — استيراد المكتبات والخط العربي تلقائياً ─────────────────────────────
 # ملاحظة:
@@ -971,9 +971,6 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
         _append_notes_section("الخلاصة المهنية - الزيارات الصفية", [
             "نجاحات المعلم",
             "جوانب بحاجة إلى تطوير",
-            "الدعم المقدم لها",
-            "توظيف جوانب التميز لديها",
-            "مدى التحسين في الأداء",
         ], "#10b981")
         # التقييم الذاتي: لا يشمل حقول "أبرز نقاط القوة/أبرز الجوانب" لأنها تخص التوأمة/الملاحظات الموجهة
         _append_notes_section("الخلاصة المهنية - التقييم الذاتي", [
@@ -1006,12 +1003,12 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
     if report_type == "detailed" and selected_teacher == "الكل" and len(filtered_df) > 0:
         strength_cols_pdf = [
             "نجاحات المعلم", "نقاط القوة في أدائي العام",
-            "توظيف جوانب التميز لديها", "مدى التحسين في الأداء",
         ]
         dev_cols_pdf = [
             "جوانب بحاجة إلى تطوير", "نقاط الضعف التي تحتاج إلى تطوير",
-            "الدعم المطلوب من زيارات القيادة الوسطى",
-            "الدعم المقدم لها", "مقترحاتي لتطوير أدائي",
+        ]
+        self_support_cols_pdf = [
+            "الدعم المطلوب من زيارات القيادة الوسطى", "مقترحاتي لتطوير أدائي",
         ]
         twin_cols_pdf = [
             "أبرز نقاط القوة", "أبرز الجوانب التي تحتاج إلى تطوير",
@@ -1022,8 +1019,9 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
         ]
         strength_top = _top_pdf_notes(strength_cols_pdf, 8)
         dev_top = _top_pdf_notes(dev_cols_pdf, 8)
+        self_support_top = _top_pdf_notes(self_support_cols_pdf, 8)
         twin_top = _top_pdf_notes(twin_cols_pdf, 6)
-        if strength_top or dev_top or twin_top:
+        if strength_top or dev_top or self_support_top or twin_top:
             story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#dbeafe")))
             story.append(Paragraph(ar("الخلاصة النوعية للإدارة"), S["h2"]))
             note_sum_rows = [[
@@ -1035,7 +1033,9 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
             if strength_top:
                 note_sum_rows.append([Paragraph(ar(_fmt(strength_top)), S["tbl_cell"]), Paragraph(ar("نقاط القوة"), S["tbl_num"])])
             if dev_top:
-                note_sum_rows.append([Paragraph(ar(_fmt(dev_top)), S["tbl_cell"]), Paragraph(ar("جوانب التطوير والدعم"), S["tbl_num"])])
+                note_sum_rows.append([Paragraph(ar(_fmt(dev_top)), S["tbl_cell"]), Paragraph(ar("جوانب التطوير"), S["tbl_num"])])
+            if self_support_top:
+                note_sum_rows.append([Paragraph(ar(_fmt(self_support_top)), S["tbl_cell"]), Paragraph(ar("الدعم والمقترحات - تقييم ذاتي"), S["tbl_num"])])
             if twin_top:
                 note_sum_rows.append([Paragraph(ar(_fmt(twin_top)), S["tbl_cell"]), Paragraph(ar("ملاحظات التوأمة"), S["tbl_num"])])
             note_sum_tbl = Table(note_sum_rows, colWidths=[12.0*cm, 4.2*cm], repeatRows=1)
@@ -2139,15 +2139,12 @@ def show_analysis(df, allowed_dept):
     has_notes_dashboard = any((c in filtered.columns and filtered[c].dropna().astype(str).str.strip().ne("").any()) for c in note_cols_all)
     if has_notes_dashboard:
         section_title("📝", "نقاط القوة والجوانب التي تحتاج إلى تطوير")
-        st.caption("تظهر هذه الخلاصة حسب الفلاتر المختارة، وتُطبع كذلك في التقرير التفصيلي. تم فصل حقول التقييم الذاتي عن حقول التوأمة حتى لا تختلط البيانات.")
+        st.caption("تظهر هذه الخلاصة حسب الفلاتر المختارة، وتُطبع كذلك في التقرير التفصيلي. تم فصل حقول التقييم الذاتي عن الزيارات الصفية والتوأمة، والدعم/المقترحات تظهر ضمن التقييم الذاتي فقط.")
         col_visit, col_self, col_twin = st.columns(3)
         with col_visit:
             html_parts = []
             html_parts.append(_render_note_card("💪 نجاحات المعلم", _note_values_for_dashboard(filtered, "نجاحات المعلم"), "#10b981"))
             html_parts.append(_render_note_card("🛠️ جوانب بحاجة إلى تطوير", _note_values_for_dashboard(filtered, "جوانب بحاجة إلى تطوير"), "#f97316"))
-            html_parts.append(_render_note_card("🤝 الدعم المقدم لها", _note_values_for_dashboard(filtered, "الدعم المقدم لها"), "#3b82f6"))
-            html_parts.append(_render_note_card("✅ توظيف جوانب التميز لديها", _note_values_for_dashboard(filtered, "توظيف جوانب التميز لديها"), "#10b981"))
-            html_parts.append(_render_note_card("📈 مدى التحسين في الأداء", _note_values_for_dashboard(filtered, "مدى التحسين في الأداء"), "#2563eb"))
             html = "".join([x for x in html_parts if x])
             if html:
                 st.markdown("<div style='font-weight:900;color:#0f2044;margin-bottom:8px;text-align:center;'>زيارات صفية / قيادة</div>" + html, unsafe_allow_html=True)
@@ -2181,7 +2178,7 @@ def show_analysis(df, allowed_dept):
     # ── 10c. لوحة الأدمن: تحليل نوعي مجمع للملاحظات ──────────────────────────
     if allowed_dept == "الكل" and has_notes_dashboard:
         section_title("🛡️", "لوحة الأدمن - أبرز الملاحظات النوعية")
-        st.caption("ملخص إداري مجمع حسب الفلاتر الحالية: أكثر نقاط القوة وجوانب التطوير تكراراً على مستوى المدرسة/القسم/الشهر.")
+        st.caption("ملخص إداري مجمع حسب الفلاتر الحالية: نقاط القوة وجوانب التطوير، مع فصل الدعم والمقترحات الخاصة بالتقييم الذاتي فقط.")
 
         def _collect_note_frequency(source_df, cols):
             freq = {}
@@ -2195,12 +2192,12 @@ def show_analysis(df, allowed_dept):
 
         strength_cols_admin = [
             "نجاحات المعلم", "نقاط القوة في أدائي العام",
-            "توظيف جوانب التميز لديها", "مدى التحسين في الأداء",
         ]
         dev_cols_admin = [
             "جوانب بحاجة إلى تطوير", "نقاط الضعف التي تحتاج إلى تطوير",
-            "الدعم المطلوب من زيارات القيادة الوسطى",
-            "الدعم المقدم لها", "مقترحاتي لتطوير أدائي",
+        ]
+        self_support_cols_admin = [
+            "الدعم المطلوب من زيارات القيادة الوسطى", "مقترحاتي لتطوير أدائي",
         ]
         twin_cols_admin = [
             "أبرز نقاط القوة", "أبرز الجوانب التي تحتاج إلى تطوير",
@@ -2212,6 +2209,7 @@ def show_analysis(df, allowed_dept):
 
         strength_freq_df = _collect_note_frequency(filtered, strength_cols_admin).head(10)
         dev_freq_df = _collect_note_frequency(filtered, dev_cols_admin).head(10)
+        self_support_freq_df = _collect_note_frequency(filtered, self_support_cols_admin).head(10)
         twin_freq_df = _collect_note_frequency(filtered, twin_cols_admin).head(10)
 
         admin_c1, admin_c2 = st.columns(2)
@@ -2222,11 +2220,15 @@ def show_analysis(df, allowed_dept):
             else:
                 st.info("لا توجد نقاط قوة مسجلة حسب الفلاتر الحالية.")
         with admin_c2:
-            st.markdown("**⚠️ أكثر جوانب التطوير والدعم تكراراً**")
+            st.markdown("**⚠️ أكثر جوانب التطوير تكراراً**")
             if not dev_freq_df.empty:
                 st.dataframe(dev_freq_df, use_container_width=True, hide_index=True)
             else:
                 st.info("لا توجد جوانب تطوير مسجلة حسب الفلاتر الحالية.")
+
+        if not self_support_freq_df.empty:
+            with st.expander("🤝 الدعم والمقترحات - التقييم الذاتي فقط"):
+                st.dataframe(self_support_freq_df, use_container_width=True, hide_index=True)
 
         if not twin_freq_df.empty:
             with st.expander("🤝 ملخص ملاحظات التوأمة الموجهة"):
@@ -2237,21 +2239,26 @@ def show_analysis(df, allowed_dept):
             for dept_name_admin, dept_grp_admin in filtered.groupby("القسم الأكاديمي"):
                 s_count = 0
                 d_count = 0
+                support_count = 0
                 for c in strength_cols_admin:
                     if c in dept_grp_admin.columns:
                         s_count += dept_grp_admin[c].dropna().astype(str).str.strip().ne("").sum()
                 for c in dev_cols_admin:
                     if c in dept_grp_admin.columns:
                         d_count += dept_grp_admin[c].dropna().astype(str).str.strip().ne("").sum()
+                for c in self_support_cols_admin:
+                    if c in dept_grp_admin.columns:
+                        support_count += dept_grp_admin[c].dropna().astype(str).str.strip().ne("").sum()
                 dept_note_rows.append({
                     "القسم": dept_name_admin,
                     "عدد المعلمات": dept_grp_admin["اسم المعلمة"].nunique(),
                     "ملاحظات قوة": int(s_count),
-                    "ملاحظات تطوير/دعم": int(d_count),
+                    "ملاحظات تطوير": int(d_count),
+                    "دعم/مقترحات تقييم ذاتي": int(support_count),
                 })
             if dept_note_rows:
                 with st.expander("📊 توزيع الملاحظات النوعية حسب الأقسام"):
-                    st.dataframe(pd.DataFrame(dept_note_rows).sort_values("ملاحظات تطوير/دعم", ascending=False), use_container_width=True, hide_index=True)
+                    st.dataframe(pd.DataFrame(dept_note_rows).sort_values("ملاحظات تطوير", ascending=False), use_container_width=True, hide_index=True)
 
     # ── PDF تنزيل التقرير ─────────────────────────────────────────────────────
     section_title("📄", "تنزيل التقرير")

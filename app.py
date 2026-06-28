@@ -9,6 +9,8 @@ import os
 import sys
 import subprocess
 
+PATCH_VERSION = "REAL4_SEM_COMPARE_AND_SELF_NOTES_FIXED"
+
 # ✅ PATCH_VERSION: 2026-06-28_REAL_FIX_HTML_MONTHLY_PDF_NOTES_SUPPORT_SELF_ONLY_REAL2
 # ✅ REAL2: notes are filtered by record type; support/proposals only from self-evaluation rows
 # ✅ REAL3: hide qualitative notes when teacher=all; comparisons ignore teacher filter
@@ -1954,13 +1956,21 @@ def show_analysis(df, allowed_dept):
         if len(sems_available) >= 2:
             section_title("📊", "مقارنة الفصلين الدراسيين")
 
-            # نأخذ البيانات من df الكامل (بدون فلتر الفصل) لكن مع الفلاتر الأخرى
+            # مقارنة الفصلين يجب أن تطابق نفس الفلاتر الحالية ما عدا فلتر الفصل الدراسي فقط.
+            # لذلك نعيد بناء نطاق المقارنة من البيانات الأصلية، ونطبّق: السنة، الشهر، نوع الزيارة، القسم، واسم المعلمة.
             df_compare = df.copy()
-            # نفس السنة الدراسية المختارة في الفلتر
             if year != "الكل" and "السنة الدراسية" in df_compare.columns:
                 df_compare = df_compare[df_compare["السنة الدراسية"].astype(str) == year]
-            if allowed_dept != "الكل":
+            if month != "الكل" and "الشهر" in df_compare.columns:
+                df_compare = df_compare[df_compare["الشهر"].astype(str) == month]
+            if visitor != "الكل" and "الزائر" in df_compare.columns:
+                df_compare = df_compare[df_compare["الزائر"].astype(str) == visitor]
+            if allowed_dept != "الكل" and "القسم الأكاديمي" in df_compare.columns:
                 df_compare = df_compare[df_compare["القسم الأكاديمي"].apply(normalize_text) == normalize_text(allowed_dept)]
+            elif allowed_dept == "الكل" and 'dept' in locals() and dept != "الكل" and "القسم الأكاديمي" in df_compare.columns:
+                df_compare = df_compare[df_compare["القسم الأكاديمي"].astype(str) == dept]
+            if teacher != "الكل" and "اسم المعلمة" in df_compare.columns:
+                df_compare = df_compare[df_compare["اسم المعلمة"].astype(str) == teacher]
 
             sem_results = []
             domain_by_sem = {}
@@ -2164,8 +2174,23 @@ def show_analysis(df, allowed_dept):
             if _c in source_df.columns:
                 combined = combined.fillna("") + " " + source_df[_c].fillna("").astype(str)
         combined_norm = combined.astype(str).apply(normalize_text)
-        self_mask = combined_norm.str.contains("تقييم ذاتي|التقييم الذاتي", regex=True, na=False)
-        twin_mask = combined_norm.str.contains("توام|توأم", regex=True, na=False)
+
+        # فصل الملاحظات حسب نوع الاستمارة/الزيارة، سواء كانت القيمة موجودة في "نوع السجل" أو في "الزائر".
+        self_mask = combined_norm.str.contains("تقييم ذاتي|التقييم الذاتي|استماره التقييم الذاتي", regex=True, na=False)
+        twin_mask = combined_norm.str.contains("توام|توأم|التوامه|التوأمه", regex=True, na=False)
+
+        # إذا كان المستخدم مختار نوع الزيارة من الفلتر، نعتمد عليه أيضاً عند الحاجة.
+        try:
+            visitor_norm = normalize_text(visitor)
+            if "تقييم ذاتي" in visitor_norm or "التقييم الذاتي" in visitor_norm:
+                self_mask = pd.Series([True] * len(source_df), index=source_df.index)
+                twin_mask = pd.Series([False] * len(source_df), index=source_df.index)
+            elif "توام" in visitor_norm or "توأم" in visitor_norm:
+                twin_mask = pd.Series([True] * len(source_df), index=source_df.index)
+                self_mask = pd.Series([False] * len(source_df), index=source_df.index)
+        except Exception:
+            pass
+
         visit_mask = ~(self_mask | twin_mask)
         return source_df[visit_mask].copy(), source_df[self_mask].copy(), source_df[twin_mask].copy()
 

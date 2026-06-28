@@ -10,7 +10,7 @@ import sys
 import subprocess
 import time
 
-PATCH_VERSION = "REAL10_FORCE_REFRESH_NEW_RESPONSES"
+PATCH_VERSION = "REAL11_FILTER_AWARE_COMPLIANCE_PERIOD_FIXED"
 
 # ✅ PATCH_VERSION: 2026-06-28_REAL_FIX_HTML_MONTHLY_PDF_NOTES_SUPPORT_SELF_ONLY_REAL2
 # ✅ REAL2: notes are filtered by record type; support/proposals only from self-evaluation rows
@@ -953,6 +953,66 @@ def _selected_semesters_for_self_eval(visits_scope, selected_sem):
     return ["الفصل الدراسي الأول", "الفصل الدراسي الثاني"]
 
 
+
+def _semester_sort_key(value):
+    n = normalize_text(value)
+    if "الثاني" in n or "2" in n:
+        return 2
+    if "الاول" in n or "1" in n:
+        return 1
+    return 99
+
+
+def _latest_semester_from_scope(scope_df):
+    if scope_df is None or scope_df.empty or "الفصل الدراسي" not in scope_df.columns:
+        return "الكل"
+    sems = [s for s in scope_df["الفصل الدراسي"].dropna().astype(str).unique().tolist() if str(s).strip()]
+    if not sems:
+        return "الكل"
+    return sorted(sems, key=_semester_sort_key)[-1]
+
+
+def _latest_month_from_scope(scope_df):
+    if scope_df is None or scope_df.empty or "الشهر" not in scope_df.columns:
+        return "الكل"
+    months = [m for m in scope_df["الشهر"].dropna().astype(str).unique().tolist() if str(m).strip()]
+    ordered = [m for m in MONTHS if m in months]
+    return ordered[-1] if ordered else "الكل"
+
+
+def resolve_operational_compliance_period(visits_df, allowed_dept, selected_dept, year, sem, month, show_historical=False):
+    """
+    فترة المتابعة التشغيلية:
+    - إذا لم يتم تفعيل النواقص التاريخية، لا يحاسب النظام الفصول السابقة تلقائياً.
+    - إذا كان الفصل = الكل، يعتمد أحدث فصل موجود ضمن السنة/القسم المختار.
+    - إذا كان الشهر = الكل، يعتمد أحدث شهر موجود ضمن الفصل المختار.
+    """
+    if show_historical:
+        return sem, month
+
+    scope = visits_df.copy()
+    if year != "الكل" and "السنة الدراسية" in scope.columns:
+        scope = scope[scope["السنة الدراسية"].astype(str) == str(year)]
+    if allowed_dept != "الكل" and "القسم الأكاديمي" in scope.columns:
+        scope = scope[scope["القسم الأكاديمي"].apply(normalize_text) == normalize_text(allowed_dept)]
+    elif selected_dept != "الكل" and "القسم الأكاديمي" in scope.columns:
+        scope = scope[scope["القسم الأكاديمي"].astype(str) == str(selected_dept)]
+
+    effective_sem = sem
+    if effective_sem == "الكل":
+        effective_sem = _latest_semester_from_scope(scope)
+
+    scope_sem = scope.copy()
+    if effective_sem != "الكل" and "الفصل الدراسي" in scope_sem.columns:
+        scope_sem = scope_sem[scope_sem["الفصل الدراسي"].astype(str) == str(effective_sem)]
+
+    effective_month = month
+    if effective_month == "الكل":
+        effective_month = _latest_month_from_scope(scope_sem)
+
+    return effective_sem, effective_month
+
+
 def build_visit_compliance(visits_df, teachers_df, exceptions_df, allowed_dept, selected_dept, year, sem, month):
     """يبني جدول المتابعة: زيارة شهرية للمعلمين/القيادة الوسطى + تقييم ذاتي فصلي للجميع."""
     if teachers_df is None or teachers_df.empty:
@@ -971,6 +1031,11 @@ def build_visit_compliance(visits_df, teachers_df, exceptions_df, allowed_dept, 
         visits_scope = visits_scope[visits_scope["القسم الأكاديمي"].apply(normalize_text) == normalize_text(allowed_dept)]
     elif selected_dept != "الكل" and "القسم الأكاديمي" in visits_scope.columns:
         visits_scope = visits_scope[visits_scope["القسم الأكاديمي"].astype(str) == str(selected_dept)]
+
+    # مهم: لا نخلط نفس الشهر بين فصلين مختلفين.
+    # المتابعة تعتمد على السنة + الفصل + الشهر معاً.
+    if sem != "الكل" and "الفصل الدراسي" in visits_scope.columns:
+        visits_scope = visits_scope[visits_scope["الفصل الدراسي"].astype(str) == str(sem)]
 
     months_to_check = _selected_months_for_compliance(visits_scope, month, sem)
     sems_to_check = _selected_semesters_for_self_eval(visits_scope, sem)
@@ -2147,8 +2212,22 @@ def show_analysis(df, allowed_dept):
     if teachers_ref_df is not None and not teachers_ref_df.empty:
         section_title("📋", "متابعة الالتزام بالزيارات والتقييم الذاتي")
         selected_dept_for_compliance = dept if allowed_dept == "الكل" and 'dept' in locals() else "الكل"
+
+        show_historical_missing = st.checkbox(
+            "إظهار النواقص التاريخية للفصول/الأشهر السابقة",
+            value=False,
+            help="اتركيه غير مفعل للمتابعة التشغيلية الحالية فقط. فعّليه عند الحاجة لمراجعة فصل أو شهر سابق."
+        )
+        compliance_sem, compliance_month = resolve_operational_compliance_period(
+            df, allowed_dept, selected_dept_for_compliance, year, sem, month, show_historical_missing
+        )
+        st.caption(
+            f"فترة المتابعة المعتمدة: السنة الدراسية: {year} | الفصل الدراسي: {compliance_sem} | الشهر: {compliance_month}. "
+            "يتم منع خلط نفس الشهر بين فصلين مختلفين."
+        )
+
         comp_summary, monthly_missing_df, self_missing_df, exempted_df = build_visit_compliance(
-            df, teachers_ref_df, exceptions_ref_df, allowed_dept, selected_dept_for_compliance, year, sem, month
+            df, teachers_ref_df, exceptions_ref_df, allowed_dept, selected_dept_for_compliance, year, compliance_sem, compliance_month
         )
 
         c_m1, c_m2, c_m3, c_m4 = st.columns(4)
@@ -2283,27 +2362,8 @@ def show_analysis(df, allowed_dept):
             </div>""", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
-        # ✅ جديد: المعلمات غير المزارات عبر كل الأقسام (للمدير فقط)
-        section_title("⚠️", "المعلمات اللواتي لم تُسجَّل لهن زيارات صفية")
-        if "نوع السجل" in df.columns:
-            all_t = df["اسم المعلمة"].dropna().unique()
-            visited_t = df[df["نوع السجل"] == "زيارة صفية"]["اسم المعلمة"].dropna().unique()
-            not_vis = [(t, df[df["اسم المعلمة"]==t]["القسم الأكاديمي"].iloc[0] if "القسم الأكاديمي" in df.columns else "") for t in all_t if t not in visited_t]
-            if not_vis:
-                col_nv1, col_nv2 = st.columns(2)
-                for idx, (tname, tdept) in enumerate(not_vis):
-                    with (col_nv1 if idx % 2 == 0 else col_nv2):
-                        st.markdown(f"""
-                        <div class="alert-card">
-                            <div>
-                                <div class="alert-name">👩‍🏫 {tname}</div>
-                                <div class="alert-info">{tdept}</div>
-                            </div>
-                            <span style="font-size:11px; background:#fed7aa; padding:3px 10px;
-                                         border-radius:10px; color:#9a3412; font-weight:700;">بدون زيارة</span>
-                        </div>""", unsafe_allow_html=True)
-            else:
-                st.success("✅ جميع المعلمات لديهن زيارات مسجلة")
+        # تم إيقاف التنبيه القديم لأنه كان يعتمد على بيانات الزيارات فقط ولا يراعي Teachers/الفصل/الشهر/الاستثناءات.
+        # المتابعة الصحيحة أصبحت في قسم: متابعة الالتزام بالزيارات والتقييم الذاتي أعلاه.
 
         with st.expander("📋 جدول مقارنة الأقسام التفصيلي"):
             show_cols = ["القسم", "عدد المعلمات", "عدد السجلات", "نسبة الأداء %", "% يتجاوز بكثير", "علاوة الحجم", "النقاط المركّبة", "الحكم"]
@@ -2891,6 +2951,7 @@ st.markdown("""
     <span>تصميم وبرمجة: <span class="highlight">أ. عفاف حسين</span></span>
 </div>
 """, unsafe_allow_html=True)
+
 
 
 

@@ -63,7 +63,7 @@ if PDF_READY:
     if not _reg_font:
         PDF_READY = False
 
-DEFAULT_EXCEL_URL = "https://moebh-my.sharepoint.com/:x:/g/personal/890302057_moe_bh/IQARg9ekg-gGR6izAPSeAlzTATuVdP8MoMG5g0O9aOIlGzI?e=owOi83"
+DEFAULT_EXCEL_URL = "https://moebh-my.sharepoint.com/:x:/g/personal/890302057_moe_bh/IQARg9ekg-gGR6izAPSeAlzTATuVdP8MoMG5g0O9aOIlGzI?e=vQIoab&download=1"
 HEADER_PATH = "header.png"
 
 st.set_page_config(
@@ -346,14 +346,14 @@ def combine_first_non_empty(df, candidates):
 
 
 def guess_ms_forms_download_urls(url):
-    urls = []
     base = str(url).strip()
     if not base:
-        return urls
-    urls.append(base)
-    joiner = "&" if "?" in base else "?"
-    urls.append(base + joiner + "download=1")
-    return list(dict.fromkeys(urls))
+        return []
+    # تأكد من وجود download=1
+    if "download=1" not in base:
+        joiner = "&" if "?" in base else "?"
+        return [base, base + joiner + "download=1"]
+    return [base]
 
 
 @st.cache_data(ttl=120, show_spinner=False)

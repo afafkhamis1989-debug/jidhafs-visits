@@ -10,7 +10,7 @@ import os
 # ── PDF ──────────────────────────────────────────────────────────────────────
 try:
     from reportlab.lib.pagesizes import A4
-    from reportlab.lib import colors as rl_colors
+    from reportlab.lib import colors
     from reportlab.lib.units import cm
     from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
                                     Table, TableStyle, HRFlowable)
@@ -359,13 +359,18 @@ def guess_ms_forms_download_urls(url):
 @st.cache_data(ttl=120, show_spinner=False)
 def load_excel_from_url(url):
     last_error = None
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36",
+        "Accept": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,*/*",
+    })
     for test_url in guess_ms_forms_download_urls(url):
         try:
-            res = requests.get(test_url, timeout=40, allow_redirects=True)
+            res = session.get(test_url, timeout=40, allow_redirects=True)
             res.raise_for_status()
             content_type = res.headers.get("content-type", "").lower()
             if "text/html" in content_type and b"<html" in res.content[:500].lower():
-                last_error = "الرابط رجّع صفحة HTML وليس ملف Excel."
+                last_error = "الرابط رجّع صفحة HTML — يحتاج تسجيل دخول أو رابط تنزيل مباشر."
                 continue
             return pd.read_excel(BytesIO(res.content), sheet_name="Main")
         except Exception as e:
@@ -1739,9 +1744,10 @@ try:
         visits_df = get_forms_data(uploaded_excel)
     show_analysis(visits_df, allowed_dept)
 except Exception as e:
-    st.error("⚠️ تعذّر تحميل بيانات الزيارات من رابط SharePoint.")
-    st.info("إذا ظهر هذا الخطأ في Streamlit Cloud، غالباً الرابط يحتاج تسجيل دخول. الحل السريع: حمّلي ملف Excel من Forms وارفعيه من الزر الجانبي، أو خلي الرابط Anyone with the link can view إن كان مسموح في الوزارة.")
-    st.code(str(e))
+    st.error("⚠️ تعذّر تحميل بيانات الزيارات.")
+    st.warning("💡 الحل: حمّلي ملف Excel من Forms وارفعيه من الزر الجانبي")
+    with st.expander("تفاصيل الخطأ"):
+        st.code(str(e))
 
 st.markdown("""
 <div class="footer">

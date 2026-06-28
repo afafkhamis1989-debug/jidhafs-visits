@@ -1,4 +1,3 @@
-# نسخة مصححة: إصلاح بطاقات أفضل/أضعف البنود - 2026-06-28
 import streamlit as st
 import pandas as pd
 import requests
@@ -409,10 +408,9 @@ st.markdown("""
     border-bottom:1px solid #e5e7eb;
 }
 .insight-row{
-    display:flex;
-    direction:rtl;
-    flex-direction:row;
-    gap:14px;
+    display:grid;
+    grid-template-columns:42px 1fr 74px;
+    gap:12px;
     align-items:center;
     background:#ffffff;
     border:1px solid #eef2f7;
@@ -422,7 +420,6 @@ st.markdown("""
     box-shadow:0 2px 10px rgba(15,32,68,0.05);
 }
 .insight-rank{
-    order:1;
     width:34px;
     height:34px;
     border-radius:12px;
@@ -436,19 +433,13 @@ st.markdown("""
 .insight-wrap.best .insight-rank{background:linear-gradient(135deg,#059669,#10b981);} 
 .insight-wrap.weak .insight-rank{background:linear-gradient(135deg,#ea580c,#f472b6);} 
 .insight-name{
-    order:2;
-    flex:1;
     font-size:13px;
     font-weight:800;
     color:#111827;
     line-height:1.55;
-    text-align:right;
-    direction:rtl;
-    min-width:0;
 }
 .insight-percent{
-    order:3;
-    flex:0 0 auto;
+    justify-self:end;
     min-width:66px;
     text-align:center;
     border-radius:999px;
@@ -927,15 +918,14 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
     story.append(kpi_tbl)
     story.append(Spacer(1, 0.6*cm))
 
-    # ── المجالات الخمسة: جدول مدمج مع الرسم البياني لتقليل عدد الصفحات ─────────────
+    # ── المجالات الخمسة ───────────────────────────────────────────────────
     story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#dbeafe")))
     story.append(Paragraph(ar("تحليل المجالات الخمسة"), S["h2"]))
 
     domain_rows = [[
-        Paragraph(ar("الحكم"),        S["tbl_hdr"]),
-        Paragraph(ar("الرسم البياني"), S["tbl_hdr"]),
-        Paragraph(ar("النسبة %"),     S["tbl_hdr"]),
-        Paragraph(ar("المجال"),       S["tbl_hdr"]),
+        Paragraph(ar("الحكم"),    S["tbl_hdr"]),
+        Paragraph(ar("النسبة %"), S["tbl_hdr"]),
+        Paragraph(ar("المجال"),   S["tbl_hdr"]),
     ]]
     domain_colors_map = []
     for domain, items in ITEMS_STRUCTURE.items():
@@ -948,30 +938,61 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
             jd = get_general_judgment(dp)
             jc = JCOLORS.get(jd, colors.HexColor("#2563eb"))
             domain_rows.append([
-                Paragraph(ar(jd), S["tbl_cell"]),
-                _pbar(dp, jc, 5.6),
+                Paragraph(ar(jd),  S["tbl_cell"]),
                 Paragraph(ar(f"{dp}%"), S["tbl_num"]),
-                Paragraph(ar(domain), S["tbl_cell"]),
+                Paragraph(ar(domain),  S["tbl_cell"]),
             ])
             domain_colors_map.append(jc)
 
-    dom_tbl = Table(domain_rows, colWidths=[3.25*cm, 5.8*cm, 2.0*cm, 5.2*cm], repeatRows=1)
+    dom_tbl = Table(domain_rows, colWidths=[4*cm, 2.5*cm, 9*cm])
     dom_style = [
         ("BACKGROUND",   (0,0), (-1, 0), colors.HexColor("#0f2044")),
         ("TEXTCOLOR",    (0,0), (-1, 0), colors.white),
-        ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#f8fafc")]),
+        ("ROWBACKGROUNDS",(0,1),(-1,-1),[colors.white, colors.HexColor("#f8fafc")]),
         ("BOX",          (0,0), (-1,-1), 0.5, colors.HexColor("#e5e7eb")),
-        ("INNERGRID",    (0,0), (-1,-1), 0.35, colors.HexColor("#e5e7eb")),
-        ("TOPPADDING",   (0,0), (-1,-1), 5),
-        ("BOTTOMPADDING",(0,0), (-1,-1), 5),
+        ("INNERGRID",    (0,0), (-1,-1), 0.5, colors.HexColor("#e5e7eb")),
+        ("TOPPADDING",   (0,0), (-1,-1), 7),
+        ("BOTTOMPADDING",(0,0), (-1,-1), 7),
         ("VALIGN",       (0,0), (-1,-1), "MIDDLE"),
     ]
     for ri, jc in enumerate(domain_colors_map, start=1):
         dom_style.append(("TEXTCOLOR", (0, ri), (0, ri), jc))
         dom_style.append(("FONTNAME",  (0, ri), (0, ri), _reg_bold))
-        dom_style.append(("LINERIGHT", (3, ri), (3, ri), 3, jc))
+        dom_style.append(("LINERIGHT", (2, ri), (2, ri), 3, jc))
     dom_tbl.setStyle(TableStyle(dom_style))
     story.append(dom_tbl)
+
+    # رسم بياني مبسط للمجالات داخل ملف PDF
+    if domain_rows and len(domain_rows) > 1:
+        story.append(Spacer(1, 0.35*cm))
+        story.append(Paragraph(ar("رسم بياني للمجالات"), S["h2"]))
+        chart_rows = [[Paragraph(ar("النسبة"), S["tbl_hdr"]), Paragraph(ar("الرسم البياني"), S["tbl_hdr"]), Paragraph(ar("المجال"), S["tbl_hdr"] )]]
+        # إعادة بناء بيانات المجالات من الجدول أعلاه
+        for domain, items in ITEMS_STRUCTURE.items():
+            dcols = [f"بند {n}" for n, _ in items if f"بند {n}" in filtered_df.columns]
+            vals = []
+            for dc in dcols:
+                vals.extend(filtered_df[dc].map(JUDGMENT_WEIGHTS).dropna().tolist())
+            if vals:
+                dp = round((sum(vals)/(len(vals)*4))*100, 1)
+                jd = get_general_judgment(dp)
+                jc = JCOLORS.get(jd, colors.HexColor("#2563eb"))
+                chart_rows.append([
+                    Paragraph(ar(f"{dp}%"), S["tbl_num"]),
+                    _pbar(dp, jc, 7.2),
+                    Paragraph(ar(domain), S["tbl_cell"]),
+                ])
+        chart_tbl = Table(chart_rows, colWidths=[2.0*cm, 7.4*cm, 6.0*cm])
+        chart_tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#0f2044")),
+            ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+            ("BOX", (0,0), (-1,-1), 0.5, colors.HexColor("#e5e7eb")),
+            ("INNERGRID", (0,0), (-1,-1), 0.35, colors.HexColor("#e5e7eb")),
+            ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+            ("TOPPADDING", (0,0), (-1,-1), 5),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+        ]))
+        story.append(chart_tbl)
 
     # رسم توزيع الأحكام الكلي
     item_cols_pdf = [f"بند {i}" for i in range(1,19) if f"بند {i}" in filtered_df.columns]
@@ -1109,142 +1130,6 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
             ("BOTTOMPADDING", (0,0), (-1,-1), 3),
         ]))
         story.append(item_chart_tbl)
-
-        # ── الملاحظات النصية للتقرير الفردي ─────────────────────────────────
-        # يظهر هذا القسم فقط عند اختيار معلمة محددة من الفلتر، ويغيّر العناوين حسب نوع الزيارة.
-        selected_teacher_for_notes = None
-        try:
-            selected_teacher_for_notes = (filter_info or {}).get("اسم المعلمة", "الكل")
-        except Exception:
-            selected_teacher_for_notes = "الكل"
-
-        if selected_teacher_for_notes and selected_teacher_for_notes != "الكل" and "اسم المعلمة" in filtered_df.columns:
-            teacher_notes_df = filtered_df[filtered_df["اسم المعلمة"].astype(str) == str(selected_teacher_for_notes)].copy()
-            if not teacher_notes_df.empty:
-                story.append(Spacer(1, 0.55*cm))
-                story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#dbeafe")))
-                story.append(Paragraph(ar("نقاط القوة والجوانب التي تحتاج إلى تطوير"), S["h2"]))
-
-                note_label_style = ParagraphStyle(
-                    "note_label", fontName=_reg_bold, fontSize=9.5,
-                    alignment=TA_RIGHT, leading=14, textColor=colors.HexColor("#0f2044")
-                )
-                note_body_style = ParagraphStyle(
-                    "note_body", fontName=_reg_font, fontSize=9.5,
-                    alignment=TA_RIGHT, leading=15, textColor=colors.HexColor("#111827")
-                )
-                note_type_style = ParagraphStyle(
-                    "note_type", fontName=_reg_bold, fontSize=10,
-                    alignment=TA_CENTER, leading=15, textColor=colors.white
-                )
-
-                def _clean_note_value(v):
-                    if pd.isna(v):
-                        return ""
-                    txt = str(v).replace("\xa0", " ").strip()
-                    if txt.lower() in ["nan", "none", "null", "-"]:
-                        return ""
-                    return txt
-
-                def _unique_notes_for_column(notes_df, col_name):
-                    if col_name not in notes_df.columns:
-                        return []
-                    seen, vals = set(), []
-                    for raw_v in notes_df[col_name].tolist():
-                        txt = _clean_note_value(raw_v)
-                        if txt and txt not in seen:
-                            seen.add(txt)
-                            vals.append(txt)
-                    return vals
-
-                def _notes_table_for_group(group_title, notes_df, columns_list, accent_hex):
-                    rows = []
-                    for label in columns_list:
-                        vals = _unique_notes_for_column(notes_df, label)
-                        if vals:
-                            body_text = "<br/>".join([f"• {v}" for v in vals])
-                            rows.append([
-                                Paragraph(ar(body_text), note_body_style),
-                                Paragraph(ar(label), note_label_style),
-                            ])
-                    if not rows:
-                        return None
-
-                    tbl_data = [[Paragraph(ar(group_title), note_type_style), ""]] + rows
-                    tbl = Table(tbl_data, colWidths=[11.2*cm, 4.3*cm], repeatRows=0)
-                    tbl.setStyle(TableStyle([
-                        ("SPAN", (0,0), (1,0)),
-                        ("BACKGROUND", (0,0), (1,0), colors.HexColor(accent_hex)),
-                        ("BACKGROUND", (1,1), (1,-1), colors.HexColor("#f8fafc")),
-                        ("BACKGROUND", (0,1), (0,-1), colors.white),
-                        ("BOX", (0,0), (-1,-1), 0.6, colors.HexColor("#e5e7eb")),
-                        ("INNERGRID", (0,1), (-1,-1), 0.35, colors.HexColor("#e5e7eb")),
-                        ("VALIGN", (0,0), (-1,-1), "TOP"),
-                        ("TOPPADDING", (0,0), (-1,-1), 6),
-                        ("BOTTOMPADDING", (0,0), (-1,-1), 6),
-                        ("RIGHTPADDING", (0,0), (-1,-1), 8),
-                        ("LEFTPADDING", (0,0), (-1,-1), 8),
-                    ]))
-                    return tbl
-
-                # التقييم الذاتي: هذه الأعمدة مخصصة له فقط حسب طلبك.
-                self_eval_titles = ["التقييم الذاتي"]
-                self_eval_cols = [
-                    "نقاط القوة في أدائي العام",
-                    "نقاط الضعف التي تحتاج إلى تطوير",
-                    "أبرز نقاط القوة",
-                    "أبرز الجوانب التي تحتاج إلى تطوير",
-                    "الدعم المطلوب من زيارات القيادة الوسطى",
-                    "مقترحاتي لتطوير أدائي",
-                ]
-
-                # الزيارات الصفية / القيادة: لا نخلط معها حقول التقييم الذاتي.
-                classroom_cols = [
-                    "نجاحات المعلم",
-                    "جوانب بحاجة إلى تطوير",
-                    "الدعم المقدم لها",
-                    "توظيف جوانب التميز لديها",
-                    "مدى التحسين في الأداء",
-                ]
-
-                # التوأمة الموجهة.
-                twinning_cols = [
-                    "الأهداف التعليمية للحصة",
-                    "أساليب واستراتيجيات التدريس الملحوظة",
-                    "ما الذي يمكن أن أستفيد منه لتطوير ممارساتي التدريسية",
-                    "أفكار جديدة يمكن أن أستفيد منها لتطوير ممارساتي التدريسية",
-                    "توصيات المعلم المزور",
-                ]
-
-                added_any_notes = False
-                if "نوع السجل" in teacher_notes_df.columns:
-                    self_df = teacher_notes_df[teacher_notes_df["نوع السجل"].astype(str).str.contains("تقييم ذاتي|التقييم الذاتي", na=False)]
-                    class_df = teacher_notes_df[teacher_notes_df["نوع السجل"].astype(str).str.contains("زيارة صفية", na=False)]
-                    twin_df = teacher_notes_df[teacher_notes_df["نوع السجل"].astype(str).str.contains("توأمة|توامة", na=False)]
-                else:
-                    self_df = teacher_notes_df.iloc[0:0]
-                    class_df = teacher_notes_df
-                    twin_df = teacher_notes_df.iloc[0:0]
-
-                note_groups = [
-                    ("التقييم الذاتي", self_df, self_eval_cols, "#7c3aed"),
-                    ("الزيارة الصفية / زيارات القيادة", class_df, classroom_cols, "#2563eb"),
-                    ("التوأمة الموجهة", twin_df, twinning_cols, "#059669"),
-                ]
-
-                # لا نخلط حقول التقييم الذاتي مع الزيارات الصفية أو التوأمة.
-                # كل مجموعة تظهر فقط إذا كانت لها سجلات من نوعها وفيها بيانات فعلية.
-
-                for group_title, group_df, cols_list, accent in note_groups:
-                    tbl_notes = _notes_table_for_group(group_title, group_df, cols_list, accent)
-                    if tbl_notes is not None:
-                        if added_any_notes:
-                            story.append(Spacer(1, 0.25*cm))
-                        story.append(tbl_notes)
-                        added_any_notes = True
-
-                if not added_any_notes:
-                    story.append(Paragraph(ar("لا توجد ملاحظات نصية مسجلة لهذه المعلمة ضمن الفلاتر المختارة."), S["body"]))
 
         # ── جدول المعلمات ─────────────────────────────────────────────────
         if "اسم المعلمة" in filtered_df.columns:
@@ -1586,27 +1471,19 @@ def show_analysis(df, allowed_dept):
         col_best, col_worst = st.columns(2)
 
         def _insight_card_html(title, rows_df, card_type="best"):
-            import html
-            rows_html_parts = []
+            rows_html = ""
             for rank, (_, row) in enumerate(rows_df.iterrows(), start=1):
-                item_name = html.escape(str(row["الاسم"]))
-                item_pct = html.escape(str(row["النسبة"]))
-                rows_html_parts.append(
-                    f'<div class="insight-row">'
-                    f'<div class="insight-rank">{rank}</div>'
-                    f'<div class="insight-name">{item_name}</div>'
-                    f'<div class="insight-percent">{item_pct}%</div>'
-                    f'</div>'
-                )
-            rows_html = "".join(rows_html_parts)
-            safe_title = html.escape(str(title))
-            safe_card_type = "best" if card_type == "best" else "weak"
-            return (
-                f'<div class="insight-wrap {safe_card_type}">'
-                f'<div class="insight-title">{safe_title}</div>'
-                f'{rows_html}'
-                f'</div>'
-            )
+                rows_html += f"""
+                <div class="insight-row">
+                    <div class="insight-rank">{rank}</div>
+                    <div class="insight-name">{row['الاسم']}</div>
+                    <div class="insight-percent">{row['النسبة']}%</div>
+                </div>"""
+            return f"""
+            <div class="insight-wrap {card_type}">
+                <div class="insight-title">{title}</div>
+                {rows_html}
+            </div>"""
 
         with col_best:
             st.markdown(

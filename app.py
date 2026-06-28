@@ -4,6 +4,49 @@ import requests
 from io import BytesIO
 import plotly.graph_objects as go
 import plotly.express as px
+import math
+import os
+
+# ── PDF ──────────────────────────────────────────────────────────────────────
+try:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors as rl_colors
+    from reportlab.lib.units import cm
+    from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
+                                    Table, TableStyle, HRFlowable)
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_RIGHT, TA_CENTER
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    import arabic_reshaper
+    from bidi.algorithm import get_display
+    PDF_READY = True
+except ImportError:
+    PDF_READY = False
+
+# تسجيل خطوط عربية (يعمل مرة واحدة)
+if PDF_READY:
+    _font_dir = os.path.join(os.path.dirname(__file__), "fonts")
+    _font_candidates = [
+        _font_dir,
+        "/home/claude/fonts",
+        "/usr/share/fonts/truetype",
+    ]
+    _reg_font = None
+    _reg_bold = None
+    for _fd in _font_candidates:
+        _r = os.path.join(_fd, "Tajawal-Regular.ttf")
+        _b = os.path.join(_fd, "Tajawal-Bold.ttf")
+        if os.path.exists(_r) and os.path.exists(_b):
+            try:
+                pdfmetrics.registerFont(TTFont("TajawalPDF", _r))
+                pdfmetrics.registerFont(TTFont("TajawalPDF-Bold", _b))
+                _reg_font, _reg_bold = "TajawalPDF", "TajawalPDF-Bold"
+            except Exception:
+                pass
+            break
+    if not _reg_font:
+        PDF_READY = False
 
 DEFAULT_EXCEL_URL = "https://moebh-my.sharepoint.com/:x:/g/personal/890302057_moe_bh/IQARg9ekg-gGR6izAPSeAlzTATuVdP8MoMG5g0O9aOIlGzI?e=owOi83"
 HEADER_PATH = "header.png"
@@ -518,6 +561,281 @@ def make_rtl_bar_h(y_vals, x_vals, colors, title_text="", label_fontsize=13, rig
         font=dict(family="Tajawal"),
     )
     return fig
+
+
+
+# ─── PDF Generator ────────────────────────────────────────────────────────────
+def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="المدرسة"):
+    """
+    report_type: 'summary' = ملخص تنفيذي | 'detailed' = تفصيلي
+    """
+    if not PDF_READY:
+        return None
+
+    def ar(text):
+        reshaped = arabic_reshaper.reshape(str(text))
+        return get_display(reshaped)
+
+    # مسار الشعار — يبحث بجانب الملف أولاً ثم المجلد المعروف
+    _header_candidates = [
+        os.path.join(os.path.dirname(__file__), "header.png"),
+        os.path.join(os.path.dirname(__file__), "fonts", "header.png"),
+        "/home/claude/fonts/header.png",
+    ]
+    _header_img = next((p for p in _header_candidates if os.path.exists(p)), None)
+
+    buf = BytesIO()
+
+    # ── حجم الصفحة والهوامش ───────────────────────────────────────────────
+    PAGE_W, PAGE_H = A4
+    HEADER_H = 3.2 * cm   # ارتفاع منطقة الشعار
+    TOP_MARGIN = HEADER_H + 0.5 * cm
+
+    from reportlab.platypus import BaseDocTemplate, Frame, PageTemplate
+    from reportlab.lib.utils import ImageReader
+
+    # دالة رسم الشعار في رأس كل صفحة
+    def _draw_header(canvas_obj, doc_obj):
+        canvas_obj.saveState()
+        if _header_img:
+            canvas_obj.drawImage(
+                _header_img,
+                x=0, y=PAGE_H - HEADER_H,
+                width=PAGE_W, height=HEADER_H,
+                preserveAspectRatio=False,
+                mask="auto",
+            )
+        # خط فاصل
+        canvas_obj.setStrokeColor(colors.HexColor("#0f2044"))
+        canvas_obj.setLineWidth(1)
+        canvas_obj.line(1.5*cm, PAGE_H - HEADER_H - 0.15*cm, PAGE_W - 1.5*cm, PAGE_H - HEADER_H - 0.15*cm)
+        # رقم الصفحة
+        canvas_obj.setFont(_reg_font, 9)
+        page_text = ar(f"صفحة {doc_obj.page}")
+        canvas_obj.drawCentredString(PAGE_W / 2, 0.6 * cm, page_text)
+        canvas_obj.restoreState()
+
+    frame = Frame(
+        x1=2*cm, y1=1.5*cm,
+        width=PAGE_W - 4*cm,
+        height=PAGE_H - TOP_MARGIN - 2*cm,
+    )
+    doc = BaseDocTemplate(
+        buf, pagesize=A4,
+        rightMargin=2*cm, leftMargin=2*cm,
+        topMargin=TOP_MARGIN, bottomMargin=1.5*cm,
+        title="تقرير الزيارات الصفية",
+    )
+    doc.addPageTemplates([PageTemplate(id="main", frames=[frame], onPage=_draw_header)])
+
+    # ── أنماط ─────────────────────────────────────────────────────────────
+    S = {
+        "title":    ParagraphStyle("title",    fontName=_reg_bold,  fontSize=20, alignment=TA_CENTER, leading=28, spaceAfter=6),
+        "subtitle": ParagraphStyle("subtitle", fontName=_reg_font,  fontSize=12, alignment=TA_CENTER, leading=18, textColor=colors.HexColor("#4b5563"), spaceAfter=4),
+        "h2":       ParagraphStyle("h2",       fontName=_reg_bold,  fontSize=14, alignment=TA_RIGHT,  leading=22, spaceBefore=14, spaceAfter=6, textColor=colors.HexColor("#0f2044")),
+        "body":     ParagraphStyle("body",     fontName=_reg_font,  fontSize=11, alignment=TA_RIGHT,  leading=18),
+        "kpi_val":  ParagraphStyle("kpi_val",  fontName=_reg_bold,  fontSize=22, alignment=TA_CENTER, leading=28),
+        "kpi_lbl":  ParagraphStyle("kpi_lbl",  fontName=_reg_font,  fontSize=9,  alignment=TA_CENTER, leading=14, textColor=colors.HexColor("#6b7280")),
+        "tbl_hdr":  ParagraphStyle("tbl_hdr",  fontName=_reg_bold,  fontSize=10, alignment=TA_CENTER, leading=14, textColor=colors.white),
+        "tbl_cell": ParagraphStyle("tbl_cell", fontName=_reg_font,  fontSize=10, alignment=TA_RIGHT,  leading=14),
+        "tbl_num":  ParagraphStyle("tbl_num",  fontName=_reg_bold,  fontSize=10, alignment=TA_CENTER, leading=14),
+    }
+
+    # ألوان الأحكام
+    JCOLORS = {
+        "يتجاوز التوقعات بكثير": colors.HexColor("#10b981"),
+        "يتجاوز التوقعات":       colors.HexColor("#3b82f6"),
+        "يفي بالتوقعات":         colors.HexColor("#fbbf24"),
+        "يفي بالتوقعات جزئياً":  colors.HexColor("#f472b6"),
+    }
+
+    story = []
+
+    # ── غلاف ──────────────────────────────────────────────────────────────
+    story.append(Spacer(1, 1.5*cm))
+    story.append(Paragraph(ar("تقرير الزيارات الصفية"), S["title"]))
+    story.append(Paragraph(ar("مدرسة جدحفص الثانوية للبنات"), S["subtitle"]))
+    story.append(Paragraph(ar(f"القسم: {dept_name}"), S["subtitle"]))
+
+    # تاريخ التقرير
+    import datetime
+    today = datetime.date.today().strftime("%Y/%m/%d")
+    story.append(Paragraph(ar(f"تاريخ التقرير: {today}"), S["subtitle"]))
+    story.append(Spacer(1, 0.4*cm))
+    story.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor("#0f2044")))
+    story.append(Spacer(1, 0.5*cm))
+
+    # ── KPIs ──────────────────────────────────────────────────────────────
+    percent  = calculate_percentage(filtered_df)
+    judgment = get_general_judgment(percent)
+    n_rec    = len(filtered_df)
+    n_teach  = filtered_df["اسم المعلمة"].nunique() if "اسم المعلمة" in filtered_df.columns else 0
+    j_color  = JCOLORS.get(judgment, colors.HexColor("#2563eb"))
+
+    kpi_data = [
+        [Paragraph(ar("إجمالي السجلات"), S["kpi_lbl"]),
+         Paragraph(ar("عدد المعلمات"),   S["kpi_lbl"]),
+         Paragraph(ar("النسبة العامة"),  S["kpi_lbl"]),
+         Paragraph(ar("الحكم العام"),    S["kpi_lbl"])],
+        [Paragraph(ar(str(n_rec)),   S["kpi_val"]),
+         Paragraph(ar(str(n_teach)), S["kpi_val"]),
+         Paragraph(ar(f"{percent}%"), ParagraphStyle("kv2", fontName=_reg_bold, fontSize=22, alignment=TA_CENTER, leading=28, textColor=j_color)),
+         Paragraph(ar(judgment),      ParagraphStyle("kv3", fontName=_reg_bold, fontSize=13, alignment=TA_CENTER, leading=20, textColor=j_color))],
+    ]
+    kpi_tbl = Table(kpi_data, colWidths=[3.8*cm]*4)
+    kpi_tbl.setStyle(TableStyle([
+        ("BOX",         (0,0), (-1,-1), 0.5, colors.HexColor("#e5e7eb")),
+        ("INNERGRID",   (0,0), (-1,-1), 0.5, colors.HexColor("#e5e7eb")),
+        ("BACKGROUND",  (0,0), (-1, 0), colors.HexColor("#f8fafc")),
+        ("ROWBACKGROUNDS",(0,1),(-1,1),[colors.white]),
+        ("TOPPADDING",  (0,0), (-1,-1), 8),
+        ("BOTTOMPADDING",(0,0), (-1,-1), 8),
+        ("LINEABOVE",   (2,0), (2,-1), 2, j_color),
+        ("LINEABOVE",   (3,0), (3,-1), 2, j_color),
+    ]))
+    story.append(kpi_tbl)
+    story.append(Spacer(1, 0.6*cm))
+
+    # ── المجالات الخمسة ───────────────────────────────────────────────────
+    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#dbeafe")))
+    story.append(Paragraph(ar("تحليل المجالات الخمسة"), S["h2"]))
+
+    domain_rows = [[
+        Paragraph(ar("الحكم"),    S["tbl_hdr"]),
+        Paragraph(ar("النسبة %"), S["tbl_hdr"]),
+        Paragraph(ar("المجال"),   S["tbl_hdr"]),
+    ]]
+    domain_colors_map = []
+    for domain, items in ITEMS_STRUCTURE.items():
+        dcols = [f"بند {n}" for n, _ in items if f"بند {n}" in filtered_df.columns]
+        vals = []
+        for dc in dcols:
+            vals.extend(filtered_df[dc].map(JUDGMENT_WEIGHTS).dropna().tolist())
+        if vals:
+            dp = round((sum(vals)/(len(vals)*4))*100, 1)
+            jd = get_general_judgment(dp)
+            jc = JCOLORS.get(jd, colors.HexColor("#2563eb"))
+            domain_rows.append([
+                Paragraph(ar(jd),  S["tbl_cell"]),
+                Paragraph(ar(f"{dp}%"), S["tbl_num"]),
+                Paragraph(ar(domain),  S["tbl_cell"]),
+            ])
+            domain_colors_map.append(jc)
+
+    dom_tbl = Table(domain_rows, colWidths=[4*cm, 2.5*cm, 9*cm])
+    dom_style = [
+        ("BACKGROUND",   (0,0), (-1, 0), colors.HexColor("#0f2044")),
+        ("TEXTCOLOR",    (0,0), (-1, 0), colors.white),
+        ("ROWBACKGROUNDS",(0,1),(-1,-1),[colors.white, colors.HexColor("#f8fafc")]),
+        ("BOX",          (0,0), (-1,-1), 0.5, colors.HexColor("#e5e7eb")),
+        ("INNERGRID",    (0,0), (-1,-1), 0.5, colors.HexColor("#e5e7eb")),
+        ("TOPPADDING",   (0,0), (-1,-1), 7),
+        ("BOTTOMPADDING",(0,0), (-1,-1), 7),
+        ("VALIGN",       (0,0), (-1,-1), "MIDDLE"),
+    ]
+    for ri, jc in enumerate(domain_colors_map, start=1):
+        dom_style.append(("TEXTCOLOR", (0, ri), (0, ri), jc))
+        dom_style.append(("FONTNAME",  (0, ri), (0, ri), _reg_bold))
+        dom_style.append(("LINERIGHT", (2, ri), (2, ri), 3, jc))
+    dom_tbl.setStyle(TableStyle(dom_style))
+    story.append(dom_tbl)
+
+    # ── تفصيل البنود (للتقرير التفصيلي فقط) ──────────────────────────────
+    if report_type == "detailed":
+        story.append(Spacer(1, 0.6*cm))
+        story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#dbeafe")))
+        story.append(Paragraph(ar("تفصيل البنود الـ 18"), S["h2"]))
+
+        item_rows = [[
+            Paragraph(ar("الحكم"),    S["tbl_hdr"]),
+            Paragraph(ar("النسبة %"), S["tbl_hdr"]),
+            Paragraph(ar("البند"),    S["tbl_hdr"]),
+            Paragraph(ar("#"),        S["tbl_hdr"]),
+        ]]
+        item_colors_map = []
+        for i in range(1, 19):
+            col_i = f"بند {i}"
+            if col_i in filtered_df.columns:
+                vals_i = filtered_df[col_i].map(JUDGMENT_WEIGHTS).dropna().tolist()
+                if vals_i:
+                    ip = round((sum(vals_i)/(len(vals_i)*4))*100, 1)
+                    ji = get_general_judgment(ip)
+                    jc = JCOLORS.get(ji, colors.HexColor("#2563eb"))
+                    item_rows.append([
+                        Paragraph(ar(ji),  S["tbl_cell"]),
+                        Paragraph(ar(f"{ip}%"), S["tbl_num"]),
+                        Paragraph(ar(ITEM_NAMES.get(i, f"بند {i}")), S["tbl_cell"]),
+                        Paragraph(ar(str(i)), S["tbl_num"]),
+                    ])
+                    item_colors_map.append(jc)
+
+        itm_tbl = Table(item_rows, colWidths=[3.5*cm, 2*cm, 8.5*cm, 1.5*cm])
+        itm_style = [
+            ("BACKGROUND",   (0,0), (-1, 0), colors.HexColor("#0f2044")),
+            ("TEXTCOLOR",    (0,0), (-1, 0), colors.white),
+            ("ROWBACKGROUNDS",(0,1),(-1,-1),[colors.white, colors.HexColor("#f8fafc")]),
+            ("BOX",          (0,0), (-1,-1), 0.5, colors.HexColor("#e5e7eb")),
+            ("INNERGRID",    (0,0), (-1,-1), 0.5, colors.HexColor("#e5e7eb")),
+            ("TOPPADDING",   (0,0), (-1,-1), 5),
+            ("BOTTOMPADDING",(0,0), (-1,-1), 5),
+            ("VALIGN",       (0,0), (-1,-1), "MIDDLE"),
+        ]
+        for ri, jc in enumerate(item_colors_map, start=1):
+            itm_style.append(("TEXTCOLOR", (0, ri), (0, ri), jc))
+            itm_style.append(("FONTNAME",  (0, ri), (0, ri), _reg_bold))
+        itm_tbl.setStyle(TableStyle(itm_style))
+        story.append(itm_tbl)
+
+        # ── جدول المعلمات ─────────────────────────────────────────────────
+        if "اسم المعلمة" in filtered_df.columns:
+            story.append(Spacer(1, 0.6*cm))
+            story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#dbeafe")))
+            story.append(Paragraph(ar("أداء المعلمات"), S["h2"]))
+
+            t_rows = [[
+                Paragraph(ar("الحكم"),      S["tbl_hdr"]),
+                Paragraph(ar("النسبة %"),   S["tbl_hdr"]),
+                Paragraph(ar("عدد السجلات"),S["tbl_hdr"]),
+                Paragraph(ar("اسم المعلمة"),S["tbl_hdr"]),
+            ]]
+            t_colors = []
+            for tname, tgrp in filtered_df.groupby("اسم المعلمة"):
+                tp = calculate_percentage(tgrp)
+                jt = get_general_judgment(tp)
+                jc = JCOLORS.get(jt, colors.HexColor("#2563eb"))
+                t_rows.append([
+                    Paragraph(ar(jt), S["tbl_cell"]),
+                    Paragraph(ar(f"{tp}%"), S["tbl_num"]),
+                    Paragraph(ar(str(len(tgrp))), S["tbl_num"]),
+                    Paragraph(ar(tname), S["tbl_cell"]),
+                ])
+                t_colors.append(jc)
+
+            t_tbl = Table(t_rows, colWidths=[3.5*cm, 2.5*cm, 2.5*cm, 7*cm])
+            t_style = [
+                ("BACKGROUND",    (0,0), (-1, 0), colors.HexColor("#0f2044")),
+                ("TEXTCOLOR",     (0,0), (-1, 0), colors.white),
+                ("ROWBACKGROUNDS",(0,1),(-1,-1),[colors.white, colors.HexColor("#f8fafc")]),
+                ("BOX",           (0,0), (-1,-1), 0.5, colors.HexColor("#e5e7eb")),
+                ("INNERGRID",     (0,0), (-1,-1), 0.5, colors.HexColor("#e5e7eb")),
+                ("TOPPADDING",    (0,0), (-1,-1), 6),
+                ("BOTTOMPADDING", (0,0), (-1,-1), 6),
+                ("VALIGN",        (0,0), (-1,-1), "MIDDLE"),
+            ]
+            for ri, jc in enumerate(t_colors, start=1):
+                t_style.append(("TEXTCOLOR", (0, ri), (0, ri), jc))
+                t_style.append(("FONTNAME",  (0, ri), (0, ri), _reg_bold))
+            t_tbl.setStyle(TableStyle(t_style))
+            story.append(t_tbl)
+
+    # ── تذييل ─────────────────────────────────────────────────────────────
+    story.append(Spacer(1, 1*cm))
+    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#0f2044")))
+    story.append(Spacer(1, 0.3*cm))
+    story.append(Paragraph(ar("مديرة المدرسة: أ. خلود يعقوب  |  المديرة المساعدة: أ. سامية سلمان  |  تصميم: أ. عفاف حسين"), S["subtitle"]))
+
+    doc.build(story)
+    return buf.getvalue()
 
 
 # ─── Analysis Page ────────────────────────────────────────────────────────────
@@ -1283,6 +1601,41 @@ def show_analysis(df, allowed_dept):
 
         with st.expander("📋 جدول مقارنة المعلمات بمتوسط أقسامهن"):
             st.dataframe(tdf2, use_container_width=True, hide_index=True)
+
+    # ── PDF تنزيل التقرير ─────────────────────────────────────────────────────
+    section_title("📄", "تنزيل التقرير")
+
+    if PDF_READY:
+        dept_label_pdf = allowed_dept if allowed_dept != "الكل" else "جميع الأقسام"
+        col_pdf1, col_pdf2 = st.columns(2)
+
+        with col_pdf1:
+            if st.button("📄 تنزيل الملخص التنفيذي", key="pdf_summary"):
+                with st.spinner("جاري إعداد التقرير..."):
+                    pdf_bytes = generate_pdf(filtered, allowed_dept, report_type="summary", dept_name=dept_label_pdf)
+                if pdf_bytes:
+                    st.download_button(
+                        label="⬇️ تحميل الملخص التنفيذي (PDF)",
+                        data=pdf_bytes,
+                        file_name=f"ملخص_تنفيذي_{dept_label_pdf}.pdf",
+                        mime="application/pdf",
+                        key="dl_summary"
+                    )
+
+        with col_pdf2:
+            if st.button("📋 تنزيل التقرير التفصيلي", key="pdf_detailed"):
+                with st.spinner("جاري إعداد التقرير التفصيلي..."):
+                    pdf_bytes = generate_pdf(filtered, allowed_dept, report_type="detailed", dept_name=dept_label_pdf)
+                if pdf_bytes:
+                    st.download_button(
+                        label="⬇️ تحميل التقرير التفصيلي (PDF)",
+                        data=pdf_bytes,
+                        file_name=f"تقرير_تفصيلي_{dept_label_pdf}.pdf",
+                        mime="application/pdf",
+                        key="dl_detailed"
+                    )
+    else:
+        st.info("⚠️ مكتبات PDF غير متوفرة. شغّلي: pip install reportlab arabic-reshaper python-bidi")
 
     # ── 11. TEXT NOTES ────────────────────────────────────────────────────────
     text_cols = [

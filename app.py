@@ -11,6 +11,7 @@ import subprocess
 
 # ✅ PATCH_VERSION: 2026-06-28_REAL_FIX_HTML_MONTHLY_PDF_NOTES_SUPPORT_SELF_ONLY_REAL2
 # ✅ REAL2: notes are filtered by record type; support/proposals only from self-evaluation rows
+# ✅ REAL3: hide qualitative notes when teacher=all; comparisons ignore teacher filter
 
 # ── PDF — استيراد المكتبات والخط العربي تلقائياً ─────────────────────────────
 # ملاحظة:
@@ -1372,6 +1373,9 @@ def show_analysis(df, allowed_dept):
     else:
         filtered = filtered[filtered["القسم الأكاديمي"].apply(normalize_text) == normalize_text(allowed_dept)]
 
+    # نحفظ نطاق المقارنة قبل فلتر اسم المعلمة؛ حتى تبقى مقارنة المعلمة بمتوسط القسم/الأدمن صحيحة حسب السنة/الفصل/الشهر/نوع الزيارة فقط.
+    comparison_scope = filtered.copy()
+
     teachers = ["الكل"] + sorted(filtered["اسم المعلمة"].dropna().astype(str).unique().tolist()) if "اسم المعلمة" in filtered.columns else ["الكل"]
     teacher = st.selectbox("👩‍🏫 اسم المعلمة", teachers)
     if teacher != "الكل":
@@ -2092,7 +2096,8 @@ def show_analysis(df, allowed_dept):
         for tname, tgrp in filtered.groupby("اسم المعلمة"):
             tp = calculate_percentage(tgrp)
             dept_name = tgrp["القسم الأكاديمي"].iloc[0] if len(tgrp) > 0 else ""
-            dept_grp  = filtered[filtered["القسم الأكاديمي"] == dept_name]
+            # متوسط القسم يحسب من نطاق الفلاتر قبل اختيار اسم المعلمة، حتى لا يصبح متوسط القسم = أداء المعلمة نفسها.
+            dept_grp  = comparison_scope[comparison_scope["القسم الأكاديمي"] == dept_name] if "comparison_scope" in locals() else filtered[filtered["القسم الأكاديمي"] == dept_name]
             dept_avg  = calculate_percentage(dept_grp)
             diff_td   = round(tp - dept_avg, 1)
             teacher_dept_rows.append({
@@ -2137,7 +2142,7 @@ def show_analysis(df, allowed_dept):
         vals = []
         for v in source_df[col_name].dropna().astype(str).tolist():
             txt = " ".join(v.replace("<", " ").replace(">", " ").replace("&", " و ").split()).strip()
-            if txt and txt.lower() not in ["nan", "none"] and txt not in vals:
+            if txt and txt.lower() not in ["nan", "none", "-"] and txt not in vals:
                 vals.append(txt)
         return vals[:limit]
 
@@ -2152,7 +2157,8 @@ def show_analysis(df, allowed_dept):
 
     def _note_type_dataframes(source_df):
         if source_df is None or source_df.empty:
-            return source_df.iloc[0:0].copy(), source_df.iloc[0:0].copy(), source_df.iloc[0:0].copy()
+            empty_df = source_df.iloc[0:0].copy() if source_df is not None else pd.DataFrame()
+            return empty_df, empty_df, empty_df
         combined = pd.Series([""] * len(source_df), index=source_df.index, dtype="string")
         for _c in ["نوع السجل", "الزائر"]:
             if _c in source_df.columns:
@@ -2169,7 +2175,6 @@ def show_analysis(df, allowed_dept):
         "نجاحات المعلم", "جوانب بحاجة إلى تطوير",
         "نقاط القوة في أدائي العام", "نقاط الضعف التي تحتاج إلى تطوير",
         "أبرز نقاط القوة", "أبرز الجوانب التي تحتاج إلى تطوير",
-        "الدعم المقدم لها", "توظيف جوانب التميز لديها", "مدى التحسين في الأداء",
         "الدعم المطلوب من زيارات القيادة الوسطى", "مقترحاتي لتطوير أدائي",
         "الأهداف التعليمية للحصة", "أساليب واستراتيجيات التدريس الملحوظة",
         "ما الذي يمكن أن أستفيد منه لتطوير ممارساتي التدريسية",
@@ -2177,48 +2182,51 @@ def show_analysis(df, allowed_dept):
         "توصيات المعلم المزور",
     ]
     has_notes_dashboard = any((c in filtered.columns and filtered[c].dropna().astype(str).str.strip().ne("").any()) for c in note_cols_all)
-    if has_notes_dashboard:
-        section_title("📝", "نقاط القوة والجوانب التي تحتاج إلى تطوير")
-        st.caption("تظهر هذه الخلاصة حسب الفلاتر المختارة، وتُطبع كذلك في التقرير التفصيلي. تم فصل حقول التقييم الذاتي عن الزيارات الصفية والتوأمة، والدعم/المقترحات تظهر ضمن التقييم الذاتي فقط.")
-        col_visit, col_self, col_twin = st.columns(3)
-        with col_visit:
-            html_parts = []
-            html_parts.append(_render_note_card("💪 نجاحات المعلم", _note_values_for_dashboard(note_visit_df, "نجاحات المعلم"), "#10b981"))
-            html_parts.append(_render_note_card("🛠️ جوانب بحاجة إلى تطوير", _note_values_for_dashboard(note_visit_df, "جوانب بحاجة إلى تطوير"), "#f97316"))
-            html = "".join([x for x in html_parts if x])
-            if html:
-                st.markdown("<div style='font-weight:900;color:#0f2044;margin-bottom:8px;text-align:center;'>زيارات صفية / قيادة</div>" + html, unsafe_allow_html=True)
-            else:
-                st.info("لا توجد ملاحظات للزيارات الصفية حسب الفلاتر الحالية.")
-        with col_self:
-            html_parts = []
-            html_parts.append(_render_note_card("🌟 نقاط القوة في أدائي العام", _note_values_for_dashboard(note_self_df, "نقاط القوة في أدائي العام"), "#10b981"))
-            html_parts.append(_render_note_card("⚠️ نقاط الضعف التي تحتاج إلى تطوير", _note_values_for_dashboard(note_self_df, "نقاط الضعف التي تحتاج إلى تطوير"), "#f97316"))
-            html_parts.append(_render_note_card("🤝 الدعم المطلوب من زيارات القيادة الوسطى", _note_values_for_dashboard(note_self_df, "الدعم المطلوب من زيارات القيادة الوسطى"), "#3b82f6"))
-            html_parts.append(_render_note_card("💡 مقترحاتي لتطوير أدائي", _note_values_for_dashboard(note_self_df, "مقترحاتي لتطوير أدائي"), "#2563eb"))
-            html = "".join([x for x in html_parts if x])
-            if html:
-                st.markdown("<div style='font-weight:900;color:#0f2044;margin-bottom:8px;text-align:center;'>التقييم الذاتي</div>" + html, unsafe_allow_html=True)
-            else:
-                st.info("لا توجد ملاحظات للتقييم الذاتي حسب الفلاتر الحالية.")
-        with col_twin:
-            html_parts = []
-            html_parts.append(_render_note_card("⭐ أبرز نقاط القوة", _note_values_for_dashboard(note_twin_df, "أبرز نقاط القوة"), "#10b981"))
-            html_parts.append(_render_note_card("📌 أبرز الجوانب التي تحتاج إلى تطوير", _note_values_for_dashboard(note_twin_df, "أبرز الجوانب التي تحتاج إلى تطوير"), "#f97316"))
-            html_parts.append(_render_note_card("🎯 الأهداف التعليمية للحصة", _note_values_for_dashboard(note_twin_df, "الأهداف التعليمية للحصة"), "#7c3aed"))
-            html_parts.append(_render_note_card("📚 أساليب واستراتيجيات التدريس الملحوظة", _note_values_for_dashboard(note_twin_df, "أساليب واستراتيجيات التدريس الملحوظة"), "#7c3aed"))
-            html_parts.append(_render_note_card("💡 أفكار/ممارسات مستفادة", _note_values_for_dashboard(note_twin_df, "ما الذي يمكن أن أستفيد منه لتطوير ممارساتي التدريسية") + _note_values_for_dashboard(note_twin_df, "أفكار جديدة يمكن أن أستفيد منها لتطوير ممارساتي التدريسية"), "#7c3aed"))
-            html_parts.append(_render_note_card("📝 توصيات المعلم المزور", _note_values_for_dashboard(note_twin_df, "توصيات المعلم المزور"), "#7c3aed"))
-            html = "".join([x for x in html_parts if x])
-            if html:
-                st.markdown("<div style='font-weight:900;color:#0f2044;margin-bottom:8px;text-align:center;'>التوأمة / الملاحظات الموجهة</div>" + html, unsafe_allow_html=True)
-            else:
-                st.info("لا توجد ملاحظات للتوأمة حسب الفلاتر الحالية.")
+
+    # ملاحظات المعلمة لا تظهر عند اختيار "الكل" حتى لا تظهر مربعات لا توجد ملاحظات في لوحة القسم/الأدمن.
+    # تظهر فقط عند اختيار معلمة محددة، وتُفصل حسب نوع الزيارة حتى لا تختلط حقول التقييم الذاتي والتوأمة والزيارات.
+    if has_notes_dashboard and teacher != "الكل":
+        visit_html_parts = [
+            _render_note_card("💪 نجاحات المعلم", _note_values_for_dashboard(note_visit_df, "نجاحات المعلم"), "#10b981"),
+            _render_note_card("🛠️ جوانب بحاجة إلى تطوير", _note_values_for_dashboard(note_visit_df, "جوانب بحاجة إلى تطوير"), "#f97316"),
+        ]
+        self_html_parts = [
+            _render_note_card("🌟 نقاط القوة في أدائي العام", _note_values_for_dashboard(note_self_df, "نقاط القوة في أدائي العام"), "#10b981"),
+            _render_note_card("⚠️ نقاط الضعف التي تحتاج إلى تطوير", _note_values_for_dashboard(note_self_df, "نقاط الضعف التي تحتاج إلى تطوير"), "#f97316"),
+            _render_note_card("🤝 الدعم المطلوب من زيارات القيادة الوسطى", _note_values_for_dashboard(note_self_df, "الدعم المطلوب من زيارات القيادة الوسطى"), "#3b82f6"),
+            _render_note_card("💡 مقترحاتي لتطوير أدائي", _note_values_for_dashboard(note_self_df, "مقترحاتي لتطوير أدائي"), "#2563eb"),
+        ]
+        twin_html_parts = [
+            _render_note_card("⭐ أبرز نقاط القوة", _note_values_for_dashboard(note_twin_df, "أبرز نقاط القوة"), "#10b981"),
+            _render_note_card("📌 أبرز الجوانب التي تحتاج إلى تطوير", _note_values_for_dashboard(note_twin_df, "أبرز الجوانب التي تحتاج إلى تطوير"), "#f97316"),
+            _render_note_card("🎯 الأهداف التعليمية للحصة", _note_values_for_dashboard(note_twin_df, "الأهداف التعليمية للحصة"), "#7c3aed"),
+            _render_note_card("📚 أساليب واستراتيجيات التدريس الملحوظة", _note_values_for_dashboard(note_twin_df, "أساليب واستراتيجيات التدريس الملحوظة"), "#7c3aed"),
+            _render_note_card("💡 أفكار/ممارسات مستفادة", _note_values_for_dashboard(note_twin_df, "ما الذي يمكن أن أستفيد منه لتطوير ممارساتي التدريسية") + _note_values_for_dashboard(note_twin_df, "أفكار جديدة يمكن أن أستفيد منها لتطوير ممارساتي التدريسية"), "#7c3aed"),
+            _render_note_card("📝 توصيات المعلم المزور", _note_values_for_dashboard(note_twin_df, "توصيات المعلم المزور"), "#7c3aed"),
+        ]
+        visit_html = "".join([x for x in visit_html_parts if x])
+        self_html = "".join([x for x in self_html_parts if x])
+        twin_html = "".join([x for x in twin_html_parts if x])
+
+        if visit_html or self_html or twin_html:
+            section_title("📝", "نقاط القوة والجوانب التي تحتاج إلى تطوير")
+            st.caption("تظهر هذه الخلاصة عند اختيار معلمة محددة فقط، وتُطبع في التقرير التفصيلي للمعلمة.")
+            visible_cols = []
+            if visit_html:
+                visible_cols.append(("زيارات صفية / قيادة", visit_html))
+            if self_html:
+                visible_cols.append(("التقييم الذاتي", self_html))
+            if twin_html:
+                visible_cols.append(("التوأمة / الملاحظات الموجهة", twin_html))
+            cols_notes = st.columns(len(visible_cols))
+            for idx, (label_note, html_note) in enumerate(visible_cols):
+                with cols_notes[idx]:
+                    st.markdown(f"<div style='font-weight:900;color:#0f2044;margin-bottom:8px;text-align:center;'>{label_note}</div>" + html_note, unsafe_allow_html=True)
 
     # ── 10c. لوحة الأدمن: تحليل نوعي مجمع للملاحظات ──────────────────────────
-    if allowed_dept == "الكل" and has_notes_dashboard:
-        section_title("🛡️", "لوحة الأدمن - أبرز الملاحظات النوعية")
-        st.caption("ملخص إداري مجمع حسب الفلاتر الحالية: نقاط القوة وجوانب التطوير، مع فصل الدعم والمقترحات الخاصة بالتقييم الذاتي فقط.")
+    # تظهر للأدمن فقط عند اختيار الكل، ولا تعرض مربعات فارغة إذا لا توجد ملاحظات.
+    if allowed_dept == "الكل" and teacher == "الكل" and has_notes_dashboard:
+        note_visit_admin_df, note_self_admin_df, note_twin_admin_df = _note_type_dataframes(filtered)
 
         def _collect_note_frequency(source_df, cols):
             freq = {}
@@ -2226,81 +2234,66 @@ def show_analysis(df, allowed_dept):
                 if c in source_df.columns:
                     for v in source_df[c].dropna().astype(str).tolist():
                         txt = " ".join(v.replace("<", " ").replace(">", " ").replace("&", " و ").split()).strip()
-                        if txt and txt.lower() not in ["nan", "none"]:
+                        if txt and txt.lower() not in ["nan", "none", "-"]:
                             freq[txt] = freq.get(txt, 0) + 1
             return pd.DataFrame([{"الملاحظة": k, "عدد التكرار": v} for k, v in freq.items()]).sort_values("عدد التكرار", ascending=False) if freq else pd.DataFrame(columns=["الملاحظة", "عدد التكرار"])
 
-        strength_cols_admin = [
-            "نجاحات المعلم", "نقاط القوة في أدائي العام",
-        ]
-        dev_cols_admin = [
-            "جوانب بحاجة إلى تطوير", "نقاط الضعف التي تحتاج إلى تطوير",
-        ]
-        self_support_cols_admin = [
-            "الدعم المطلوب من زيارات القيادة الوسطى", "مقترحاتي لتطوير أدائي",
-        ]
-        twin_cols_admin = [
+        strength_freq_df = _collect_note_frequency(note_visit_admin_df, ["نجاحات المعلم"]).head(10)
+        dev_freq_df = _collect_note_frequency(note_visit_admin_df, ["جوانب بحاجة إلى تطوير"]).head(10)
+        self_strength_freq_df = _collect_note_frequency(note_self_admin_df, ["نقاط القوة في أدائي العام"]).head(10)
+        self_dev_freq_df = _collect_note_frequency(note_self_admin_df, ["نقاط الضعف التي تحتاج إلى تطوير"]).head(10)
+        self_support_freq_df = _collect_note_frequency(note_self_admin_df, ["الدعم المطلوب من زيارات القيادة الوسطى", "مقترحاتي لتطوير أدائي"]).head(10)
+        twin_freq_df = _collect_note_frequency(note_twin_admin_df, [
             "أبرز نقاط القوة", "أبرز الجوانب التي تحتاج إلى تطوير",
             "الأهداف التعليمية للحصة", "أساليب واستراتيجيات التدريس الملحوظة",
             "ما الذي يمكن أن أستفيد منه لتطوير ممارساتي التدريسية",
-            "أفكار جديدة يمكن أن أستفيد منها لتطوير ممارساتي التدريسية",
-            "توصيات المعلم المزور",
-        ]
+            "أفكار جديدة يمكن أن أستفيد منها لتطوير ممارساتي التدريسية", "توصيات المعلم المزور",
+        ]).head(10)
 
-        strength_freq_df = _collect_note_frequency(note_visit_df, strength_cols_admin).head(10)
-        dev_freq_df = _collect_note_frequency(note_visit_df, dev_cols_admin).head(10)
-        self_support_freq_df = _collect_note_frequency(note_self_df, self_support_cols_admin).head(10)
-        twin_freq_df = _collect_note_frequency(note_twin_df, twin_cols_admin).head(10)
+        if not (strength_freq_df.empty and dev_freq_df.empty and self_strength_freq_df.empty and self_dev_freq_df.empty and self_support_freq_df.empty and twin_freq_df.empty):
+            section_title("🛡️", "لوحة الأدمن - أبرز الملاحظات النوعية")
+            st.caption("ملخص إداري مجمع حسب الفلاتر الحالية، مع فصل كل نوع زيارة عن الآخر.")
+            admin_c1, admin_c2 = st.columns(2)
+            with admin_c1:
+                if not strength_freq_df.empty:
+                    st.markdown("**✅ أكثر نجاحات المعلم تكراراً - الزيارات**")
+                    st.dataframe(strength_freq_df, use_container_width=True, hide_index=True)
+                if not self_strength_freq_df.empty:
+                    st.markdown("**🌟 أكثر نقاط القوة تكراراً - التقييم الذاتي**")
+                    st.dataframe(self_strength_freq_df, use_container_width=True, hide_index=True)
+            with admin_c2:
+                if not dev_freq_df.empty:
+                    st.markdown("**⚠️ أكثر جوانب التطوير تكراراً - الزيارات**")
+                    st.dataframe(dev_freq_df, use_container_width=True, hide_index=True)
+                if not self_dev_freq_df.empty:
+                    st.markdown("**🛠️ أكثر نقاط الضعف تكراراً - التقييم الذاتي**")
+                    st.dataframe(self_dev_freq_df, use_container_width=True, hide_index=True)
+            if not self_support_freq_df.empty:
+                with st.expander("🤝 الدعم والمقترحات - التقييم الذاتي فقط"):
+                    st.dataframe(self_support_freq_df, use_container_width=True, hide_index=True)
+            if not twin_freq_df.empty:
+                with st.expander("🤝 ملخص ملاحظات التوأمة الموجهة"):
+                    st.dataframe(twin_freq_df, use_container_width=True, hide_index=True)
 
-        admin_c1, admin_c2 = st.columns(2)
-        with admin_c1:
-            st.markdown("**✅ أكثر نقاط القوة تكراراً**")
-            if not strength_freq_df.empty:
-                st.dataframe(strength_freq_df, use_container_width=True, hide_index=True)
-            else:
-                st.info("لا توجد نقاط قوة مسجلة حسب الفلاتر الحالية.")
-        with admin_c2:
-            st.markdown("**⚠️ أكثر جوانب التطوير تكراراً**")
-            if not dev_freq_df.empty:
-                st.dataframe(dev_freq_df, use_container_width=True, hide_index=True)
-            else:
-                st.info("لا توجد جوانب تطوير مسجلة حسب الفلاتر الحالية.")
-
-        if not self_support_freq_df.empty:
-            with st.expander("🤝 الدعم والمقترحات - التقييم الذاتي فقط"):
-                st.dataframe(self_support_freq_df, use_container_width=True, hide_index=True)
-
-        if not twin_freq_df.empty:
-            with st.expander("🤝 ملخص ملاحظات التوأمة الموجهة"):
-                st.dataframe(twin_freq_df, use_container_width=True, hide_index=True)
-
-        if "القسم الأكاديمي" in filtered.columns and "اسم المعلمة" in filtered.columns:
-            dept_note_rows = []
-            for dept_name_admin, dept_grp_admin in filtered.groupby("القسم الأكاديمي"):
-                visit_dept_grp = note_visit_df[note_visit_df["القسم الأكاديمي"] == dept_name_admin] if "القسم الأكاديمي" in note_visit_df.columns else note_visit_df.iloc[0:0]
-                self_dept_grp = note_self_df[note_self_df["القسم الأكاديمي"] == dept_name_admin] if "القسم الأكاديمي" in note_self_df.columns else note_self_df.iloc[0:0]
-                s_count = 0
-                d_count = 0
-                support_count = 0
-                for c in strength_cols_admin:
-                    if c in visit_dept_grp.columns:
-                        s_count += visit_dept_grp[c].dropna().astype(str).str.strip().ne("").sum()
-                for c in dev_cols_admin:
-                    if c in visit_dept_grp.columns:
-                        d_count += visit_dept_grp[c].dropna().astype(str).str.strip().ne("").sum()
-                for c in self_support_cols_admin:
-                    if c in self_dept_grp.columns:
-                        support_count += self_dept_grp[c].dropna().astype(str).str.strip().ne("").sum()
-                dept_note_rows.append({
-                    "القسم": dept_name_admin,
-                    "عدد المعلمات": dept_grp_admin["اسم المعلمة"].nunique(),
-                    "ملاحظات قوة": int(s_count),
-                    "ملاحظات تطوير": int(d_count),
-                    "دعم/مقترحات تقييم ذاتي": int(support_count),
-                })
-            if dept_note_rows:
-                with st.expander("📊 توزيع الملاحظات النوعية حسب الأقسام"):
-                    st.dataframe(pd.DataFrame(dept_note_rows).sort_values("ملاحظات تطوير", ascending=False), use_container_width=True, hide_index=True)
+            if "القسم الأكاديمي" in filtered.columns and "اسم المعلمة" in filtered.columns:
+                dept_note_rows = []
+                for dept_name_admin, dept_grp_admin in filtered.groupby("القسم الأكاديمي"):
+                    visit_dept_grp = note_visit_admin_df[note_visit_admin_df["القسم الأكاديمي"] == dept_name_admin] if "القسم الأكاديمي" in note_visit_admin_df.columns else note_visit_admin_df.iloc[0:0]
+                    self_dept_grp = note_self_admin_df[note_self_admin_df["القسم الأكاديمي"] == dept_name_admin] if "القسم الأكاديمي" in note_self_admin_df.columns else note_self_admin_df.iloc[0:0]
+                    twin_dept_grp = note_twin_admin_df[note_twin_admin_df["القسم الأكاديمي"] == dept_name_admin] if "القسم الأكاديمي" in note_twin_admin_df.columns else note_twin_admin_df.iloc[0:0]
+                    dept_note_rows.append({
+                        "القسم": dept_name_admin,
+                        "عدد المعلمات": dept_grp_admin["اسم المعلمة"].nunique(),
+                        "نجاحات الزيارات": int(visit_dept_grp["نجاحات المعلم"].dropna().astype(str).str.strip().ne("").sum()) if "نجاحات المعلم" in visit_dept_grp.columns else 0,
+                        "تطوير الزيارات": int(visit_dept_grp["جوانب بحاجة إلى تطوير"].dropna().astype(str).str.strip().ne("").sum()) if "جوانب بحاجة إلى تطوير" in visit_dept_grp.columns else 0,
+                        "قوة تقييم ذاتي": int(self_dept_grp["نقاط القوة في أدائي العام"].dropna().astype(str).str.strip().ne("").sum()) if "نقاط القوة في أدائي العام" in self_dept_grp.columns else 0,
+                        "ضعف تقييم ذاتي": int(self_dept_grp["نقاط الضعف التي تحتاج إلى تطوير"].dropna().astype(str).str.strip().ne("").sum()) if "نقاط الضعف التي تحتاج إلى تطوير" in self_dept_grp.columns else 0,
+                        "دعم/مقترحات تقييم ذاتي": int(sum(self_dept_grp[c].dropna().astype(str).str.strip().ne("").sum() for c in ["الدعم المطلوب من زيارات القيادة الوسطى", "مقترحاتي لتطوير أدائي"] if c in self_dept_grp.columns)),
+                        "ملاحظات توأمة": int(sum(twin_dept_grp[c].dropna().astype(str).str.strip().ne("").sum() for c in ["أبرز نقاط القوة", "أبرز الجوانب التي تحتاج إلى تطوير"] if c in twin_dept_grp.columns)),
+                    })
+                if dept_note_rows:
+                    with st.expander("📊 توزيع الملاحظات النوعية حسب الأقسام"):
+                        st.dataframe(pd.DataFrame(dept_note_rows).sort_values("تطوير الزيارات", ascending=False), use_container_width=True, hide_index=True)
 
     # ── PDF تنزيل التقرير ─────────────────────────────────────────────────────
     section_title("📄", "تنزيل التقرير")
@@ -2372,7 +2365,7 @@ def show_analysis(df, allowed_dept):
         "توصيات المعلم المزور"
     ]
     avail_txt = [c for c in text_cols if c in filtered.columns]
-    if avail_txt:
+    if avail_txt and teacher != "الكل":
         section_title("📝", "الملاحظات والتوصيات النصية")
         with st.expander("عرض الملاحظات النصية التفصيلية"):
             base_cols = ["اسم المعلمة", "القسم الأكاديمي", "نوع السجل", "الشهر"]

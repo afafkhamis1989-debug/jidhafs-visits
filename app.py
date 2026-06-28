@@ -9,35 +9,23 @@ import os
 import sys
 import subprocess
 
-# ── تثبيت مكتبات PDF ─────────────────────────────────────────────────────────
-@st.cache_resource
-def install_pdf_libs():
-    pkgs = []
-    try:
-        import reportlab
-    except ImportError:
-        pkgs.append("reportlab")
-    try:
-        import arabic_reshaper
-    except ImportError:
-        pkgs.append("arabic-reshaper")
-    try:
-        import bidi
-    except ImportError:
-        pkgs.append("python-bidi")
-    if pkgs:
-        subprocess.check_call([sys.executable, "-m", "pip", "install"] + pkgs + ["--quiet"])
-    return True
+# ── PDF — استيراد المكتبات ──────────────────────────────────────────────────
+# ملاحظة مهمة:
+# لا نثبت المكتبات داخل Streamlit بالكود. ضعيها في requirements.txt
+# reportlab
+# arabic-reshaper
+# python-bidi
 
-install_pdf_libs()
-
-# ── PDF — استيراد بعد التثبيت مباشرة ────────────────────────────────────────
 PDF_READY = False
+PDF_ERROR = ""
+_reg_font = None
+_reg_bold = None
+
 try:
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors
     from reportlab.lib.units import cm
-    from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
+    from reportlab.platypus import (Paragraph, Spacer,
                                     Table, TableStyle, HRFlowable,
                                     BaseDocTemplate, Frame, PageTemplate)
     from reportlab.lib.styles import ParagraphStyle
@@ -47,47 +35,41 @@ try:
     import arabic_reshaper
     from bidi.algorithm import get_display
     PDF_READY = True
-except Exception:
+except Exception as e:
     PDF_READY = False
+    PDF_ERROR = f"فشل استيراد مكتبات PDF: {e}"
 
-# تسجيل خطوط عربية (يعمل مرة واحدة)
+# تسجيل خط عربي/يدعم العربية للـ PDF
+# الأفضل أن تضعي ملفي Amiri-Regular.ttf و Amiri-Bold.ttf داخل مجلد fonts بجانب app.py
+# وإذا لم توجد، يستخدم DejaVu الموجود غالباً في Streamlit Cloud.
 if PDF_READY:
-    _font_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
-    os.makedirs(_font_dir, exist_ok=True)
+    try:
+        _base_dir = os.path.dirname(os.path.abspath(__file__))
+    except Exception:
+        _base_dir = os.getcwd()
 
-    _font_r_path = os.path.join(_font_dir, "Amiri-Regular.ttf")
-    _font_b_path = os.path.join(_font_dir, "Amiri-Bold.ttf")
-
-    # تحميل الخطوط تلقائياً إذا غير موجودة
-    if not os.path.exists(_font_r_path) or not os.path.exists(_font_b_path):
-        try:
-            import urllib.request
-            _base = "https://raw.githubusercontent.com/alif-type/amiri/master/"
-            urllib.request.urlretrieve(_base + "Amiri-Regular.ttf", _font_r_path)
-            urllib.request.urlretrieve(_base + "Amiri-Bold.ttf",    _font_b_path)
-        except Exception:
-            pass
-
-    _reg_font = None
-    _reg_bold = None
     _font_candidates = [
-        _font_dir,
-        "/home/claude/fonts",
-        "/usr/share/fonts/truetype",
+        (os.path.join(_base_dir, "fonts", "Amiri-Regular.ttf"), os.path.join(_base_dir, "fonts", "Amiri-Bold.ttf")),
+        (os.path.join(_base_dir, "Amiri-Regular.ttf"), os.path.join(_base_dir, "Amiri-Bold.ttf")),
+        ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+        ("/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf", "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf"),
     ]
-    for _fd in _font_candidates:
-        _r = os.path.join(_fd, "Amiri-Regular.ttf")
-        _b = os.path.join(_fd, "Amiri-Bold.ttf")
+
+    for _r, _b in _font_candidates:
         if os.path.exists(_r) and os.path.exists(_b):
             try:
-                pdfmetrics.registerFont(TTFont("AmiriPDF", _r))
-                pdfmetrics.registerFont(TTFont("AmiriPDF-Bold", _b))
-                _reg_font, _reg_bold = "AmiriPDF", "AmiriPDF-Bold"
-            except Exception:
-                pass
-            break
-    if not _reg_font:
+                pdfmetrics.registerFont(TTFont("ArabicPDF", _r))
+                pdfmetrics.registerFont(TTFont("ArabicPDF-Bold", _b))
+                _reg_font = "ArabicPDF"
+                _reg_bold = "ArabicPDF-Bold"
+                break
+            except Exception as e:
+                PDF_ERROR = f"فشل تسجيل الخط: {e}"
+
+    if not _reg_font or not _reg_bold:
         PDF_READY = False
+        if not PDF_ERROR:
+            PDF_ERROR = "لم يتم العثور على خط عربي. ضعي Amiri-Regular.ttf و Amiri-Bold.ttf داخل مجلد fonts."
 
 DEFAULT_EXCEL_URL = "https://moebh-my.sharepoint.com/:x:/g/personal/890302057_moe_bh/IQARg9ekg-gGR6izAPSeAlzTATuVdP8MoMG5g0O9aOIlGzI?e=vQIoab&download=1"
 HEADER_PATH = "header.png"
@@ -1655,33 +1637,55 @@ def show_analysis(df, allowed_dept):
         dept_label_pdf = allowed_dept if allowed_dept != "الكل" else "جميع الأقسام"
         col_pdf1, col_pdf2 = st.columns(2)
 
+        if "pdf_summary_bytes" not in st.session_state:
+            st.session_state["pdf_summary_bytes"] = None
+        if "pdf_detailed_bytes" not in st.session_state:
+            st.session_state["pdf_detailed_bytes"] = None
+
         with col_pdf1:
-            if st.button("📄 تنزيل الملخص التنفيذي", key="pdf_summary"):
-                with st.spinner("جاري إعداد التقرير..."):
-                    pdf_bytes = generate_pdf(filtered, allowed_dept, report_type="summary", dept_name=dept_label_pdf)
-                if pdf_bytes:
-                    st.download_button(
-                        label="⬇️ تحميل الملخص التنفيذي (PDF)",
-                        data=pdf_bytes,
-                        file_name=f"ملخص_تنفيذي_{dept_label_pdf}.pdf",
-                        mime="application/pdf",
-                        key="dl_summary"
-                    )
+            if st.button("📄 تجهيز الملخص التنفيذي", key="pdf_summary"):
+                try:
+                    with st.spinner("جاري إعداد التقرير..."):
+                        st.session_state["pdf_summary_bytes"] = generate_pdf(
+                            filtered, allowed_dept, report_type="summary", dept_name=dept_label_pdf
+                        )
+                except Exception as e:
+                    st.session_state["pdf_summary_bytes"] = None
+                    st.error("تعذر إنشاء الملخص التنفيذي.")
+                    st.exception(e)
+
+            if st.session_state.get("pdf_summary_bytes"):
+                st.download_button(
+                    label="⬇️ تحميل الملخص التنفيذي (PDF)",
+                    data=st.session_state["pdf_summary_bytes"],
+                    file_name=f"ملخص_تنفيذي_{dept_label_pdf}.pdf",
+                    mime="application/pdf",
+                    key="dl_summary"
+                )
 
         with col_pdf2:
-            if st.button("📋 تنزيل التقرير التفصيلي", key="pdf_detailed"):
-                with st.spinner("جاري إعداد التقرير التفصيلي..."):
-                    pdf_bytes = generate_pdf(filtered, allowed_dept, report_type="detailed", dept_name=dept_label_pdf)
-                if pdf_bytes:
-                    st.download_button(
-                        label="⬇️ تحميل التقرير التفصيلي (PDF)",
-                        data=pdf_bytes,
-                        file_name=f"تقرير_تفصيلي_{dept_label_pdf}.pdf",
-                        mime="application/pdf",
-                        key="dl_detailed"
-                    )
+            if st.button("📋 تجهيز التقرير التفصيلي", key="pdf_detailed"):
+                try:
+                    with st.spinner("جاري إعداد التقرير التفصيلي..."):
+                        st.session_state["pdf_detailed_bytes"] = generate_pdf(
+                            filtered, allowed_dept, report_type="detailed", dept_name=dept_label_pdf
+                        )
+                except Exception as e:
+                    st.session_state["pdf_detailed_bytes"] = None
+                    st.error("تعذر إنشاء التقرير التفصيلي.")
+                    st.exception(e)
+
+            if st.session_state.get("pdf_detailed_bytes"):
+                st.download_button(
+                    label="⬇️ تحميل التقرير التفصيلي (PDF)",
+                    data=st.session_state["pdf_detailed_bytes"],
+                    file_name=f"تقرير_تفصيلي_{dept_label_pdf}.pdf",
+                    mime="application/pdf",
+                    key="dl_detailed"
+                )
     else:
-        st.info("⚠️ مكتبات PDF غير متوفرة. شغّلي: pip install reportlab arabic-reshaper python-bidi")
+        st.error("⚠️ مكتبات PDF أو الخط العربي غير جاهزة، لذلك لا يمكن تنزيل التقرير حالياً.")
+        st.code(PDF_ERROR or "راجعي ملف requirements.txt وتأكدي من إضافة reportlab و arabic-reshaper و python-bidi")
 
     # ── 11. TEXT NOTES ────────────────────────────────────────────────────────
     text_cols = [
@@ -1781,3 +1785,4 @@ st.markdown("""
     <span>تصميم وبرمجة: <span class="highlight">أ. عفاف حسين</span></span>
 </div>
 """, unsafe_allow_html=True)
+

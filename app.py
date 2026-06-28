@@ -767,7 +767,7 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
     story.append(Spacer(1, 0.15*cm))
     story.append(Paragraph(ar("تقرير الزيارات الصفية"), S["title"]))
     story.append(Paragraph(ar("مدرسة جدحفص الثانوية للبنات"), S["subtitle"]))
-    story.append(Paragraph(ar(f"القسم: {dept_name}"), S["subtitle"]))
+    # القسم سيظهر ضمن جدول الفلاتر فقط لتجنب التكرار
 
     # تاريخ التقرير + الفلاتر المختارة
     import datetime
@@ -775,32 +775,28 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
     story.append(Paragraph(ar(f"تاريخ التقرير: {today}"), S["subtitle"]))
 
     if filter_info:
-        filter_rows = []
+        # جدول رأسي للفلاتر حتى لا تنكسر العناوين مثل: السنة الدراسية / الفصل الدراسي
         keys_order = ["السنة الدراسية", "الفصل الدراسي", "الشهر", "نوع الزيارة", "القسم الأكاديمي", "اسم المعلمة"]
+        ft_data = []
         for k in keys_order:
             v = filter_info.get(k, "الكل")
-            filter_rows.append([Paragraph(ar(str(v)), S["tbl_cell"]), Paragraph(ar(k), S["tbl_num"])])
-        # ترتيب على صفين حتى تظهر بشكل أنيق
-        row1 = filter_rows[:3]
-        row2 = filter_rows[3:]
-        ft_data = []
-        for block in [row1, row2]:
-            cells = []
-            for value_cell, label_cell in block:
-                cells.extend([value_cell, label_cell])
-            ft_data.append(cells)
-        ft = Table(ft_data, colWidths=[3.2*cm, 2.0*cm, 3.2*cm, 2.0*cm, 3.2*cm, 2.0*cm])
+            ft_data.append([
+                Paragraph(ar(str(v)), ParagraphStyle("filter_value", fontName=_reg_font, fontSize=10, alignment=TA_RIGHT, leading=15)),
+                Paragraph(ar(k), ParagraphStyle("filter_label", fontName=_reg_bold, fontSize=10, alignment=TA_CENTER, leading=15)),
+            ])
+        ft = Table(ft_data, colWidths=[11.5*cm, 4.0*cm], repeatRows=0)
         ft.setStyle(TableStyle([
             ("BACKGROUND", (1,0), (1,-1), colors.HexColor("#f1f5f9")),
-            ("BACKGROUND", (3,0), (3,-1), colors.HexColor("#f1f5f9")),
-            ("BACKGROUND", (5,0), (5,-1), colors.HexColor("#f1f5f9")),
+            ("BACKGROUND", (0,0), (0,-1), colors.white),
             ("BOX", (0,0), (-1,-1), 0.5, colors.HexColor("#e5e7eb")),
             ("INNERGRID", (0,0), (-1,-1), 0.35, colors.HexColor("#e5e7eb")),
             ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
-            ("TOPPADDING", (0,0), (-1,-1), 5),
-            ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+            ("TOPPADDING", (0,0), (-1,-1), 4),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+            ("RIGHTPADDING", (0,0), (-1,-1), 8),
+            ("LEFTPADDING", (0,0), (-1,-1), 8),
         ]))
-        story.append(Spacer(1, 0.2*cm))
+        story.append(Spacer(1, 0.15*cm))
         story.append(ft)
 
     story.append(Spacer(1, 0.25*cm))

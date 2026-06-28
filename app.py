@@ -9,7 +9,7 @@ import os
 import sys
 import subprocess
 
-# ✅ PATCH_VERSION: 2026-06-28_REAL_FIX_HTML_MONTHLY_PDF
+# ✅ PATCH_VERSION: 2026-06-28_REAL_FIX_HTML_MONTHLY_PDF_NOTES_DASHBOARD
 
 # ── PDF — استيراد المكتبات والخط العربي تلقائياً ─────────────────────────────
 # ملاحظة:
@@ -965,35 +965,31 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
 
     selected_teacher = (filter_info or {}).get("اسم المعلمة", "الكل")
     if report_type == "detailed" and selected_teacher != "الكل" and len(filtered_df) > 0:
-        visitor_text_pdf = " ".join(filtered_df.get("الزائر", pd.Series(dtype=str)).dropna().astype(str).tolist())
-        record_text_pdf = " ".join(filtered_df.get("نوع السجل", pd.Series(dtype=str)).dropna().astype(str).tolist())
-        combined_type_pdf = normalize_text(visitor_text_pdf + " " + record_text_pdf)
+        # الخلاصة المهنية تظهر دائماً في التقرير الفردي إذا كانت الحقول موجودة،
+        # حتى لو كان نوع الزيارة = الكل أو كانت المعلمة لديها أكثر من نوع سجل.
         story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#dbeafe")))
-        if "تقييم" in combined_type_pdf:
-            _append_notes_section("الخلاصة المهنية - التقييم الذاتي", [
-                "نقاط القوة في أدائي العام",
-                "نقاط الضعف التي تحتاج إلى تطوير",
-                "أبرز نقاط القوة",
-                "أبرز الجوانب التي تحتاج إلى تطوير",
-                "الدعم المطلوب من زيارات القيادة الوسطى",
-                "مقترحاتي لتطوير أدائي",
-            ], "#2563eb")
-        elif "توامه" in combined_type_pdf:
-            _append_notes_section("الخلاصة المهنية - التوأمة الموجهة", [
-                "الأهداف التعليمية للحصة",
-                "أساليب واستراتيجيات التدريس الملحوظة",
-                "ما الذي يمكن أن أستفيد منه لتطوير ممارساتي التدريسية",
-                "أفكار جديدة يمكن أن أستفيد منها لتطوير ممارساتي التدريسية",
-                "توصيات المعلم المزور",
-            ], "#7c3aed")
-        else:
-            _append_notes_section("الخلاصة المهنية", [
-                "نجاحات المعلم",
-                "جوانب بحاجة إلى تطوير",
-                "الدعم المقدم لها",
-                "توظيف جوانب التميز لديها",
-                "مدى التحسين في الأداء",
-            ], "#10b981")
+        _append_notes_section("الخلاصة المهنية - الزيارات الصفية", [
+            "نجاحات المعلم",
+            "جوانب بحاجة إلى تطوير",
+            "الدعم المقدم لها",
+            "توظيف جوانب التميز لديها",
+            "مدى التحسين في الأداء",
+        ], "#10b981")
+        _append_notes_section("الخلاصة المهنية - التقييم الذاتي", [
+            "نقاط القوة في أدائي العام",
+            "نقاط الضعف التي تحتاج إلى تطوير",
+            "أبرز نقاط القوة",
+            "أبرز الجوانب التي تحتاج إلى تطوير",
+            "الدعم المطلوب من زيارات القيادة الوسطى",
+            "مقترحاتي لتطوير أدائي",
+        ], "#2563eb")
+        _append_notes_section("الخلاصة المهنية - التوأمة الموجهة", [
+            "الأهداف التعليمية للحصة",
+            "أساليب واستراتيجيات التدريس الملحوظة",
+            "ما الذي يمكن أن أستفيد منه لتطوير ممارساتي التدريسية",
+            "أفكار جديدة يمكن أن أستفيد منها لتطوير ممارساتي التدريسية",
+            "توصيات المعلم المزور",
+        ], "#7c3aed")
 
     story.append(Spacer(1, 0.25*cm))
 
@@ -2046,6 +2042,65 @@ def show_analysis(df, allowed_dept):
         with st.expander("📋 جدول مقارنة المعلمات بمتوسط أقسامهن"):
             st.dataframe(tdf2, use_container_width=True, hide_index=True)
 
+    # ── 10b. نقاط القوة والجوانب التي تحتاج إلى تطوير ───────────────────────
+    def _note_values_for_dashboard(source_df, col_name, limit=6):
+        if col_name not in source_df.columns:
+            return []
+        vals = []
+        for v in source_df[col_name].dropna().astype(str).tolist():
+            txt = " ".join(v.replace("<", " ").replace(">", " ").replace("&", " و ").split()).strip()
+            if txt and txt.lower() not in ["nan", "none"] and txt not in vals:
+                vals.append(txt)
+        return vals[:limit]
+
+    def _render_note_card(title, values, accent="#2563eb"):
+        if not values:
+            return ""
+        items_html = "".join([f"<li>{v}</li>" for v in values])
+        return (f"<div style='background:#ffffff;border:1px solid #e5e7eb;border-right:5px solid {accent};"
+                f"border-radius:14px;padding:14px 16px;margin-bottom:12px;box-shadow:0 2px 10px rgba(15,32,68,0.06);direction:rtl;text-align:right;'>"
+                f"<div style='font-size:15px;font-weight:900;color:#0f2044;margin-bottom:8px;'>{title}</div>"
+                f"<ul style='margin:0;padding-right:20px;color:#374151;font-size:13px;line-height:1.8;'>{items_html}</ul></div>")
+
+    note_cols_all = [
+        "نجاحات المعلم", "جوانب بحاجة إلى تطوير",
+        "نقاط القوة في أدائي العام", "نقاط الضعف التي تحتاج إلى تطوير",
+        "أبرز نقاط القوة", "أبرز الجوانب التي تحتاج إلى تطوير",
+        "الدعم المقدم لها", "توظيف جوانب التميز لديها", "مدى التحسين في الأداء",
+        "الدعم المطلوب من زيارات القيادة الوسطى", "مقترحاتي لتطوير أدائي",
+        "الأهداف التعليمية للحصة", "أساليب واستراتيجيات التدريس الملحوظة",
+        "ما الذي يمكن أن أستفيد منه لتطوير ممارساتي التدريسية",
+        "أفكار جديدة يمكن أن أستفيد منها لتطوير ممارساتي التدريسية",
+        "توصيات المعلم المزور",
+    ]
+    has_notes_dashboard = any((c in filtered.columns and filtered[c].dropna().astype(str).str.strip().ne("").any()) for c in note_cols_all)
+    if has_notes_dashboard:
+        section_title("📝", "نقاط القوة والجوانب التي تحتاج إلى تطوير")
+        st.caption("تظهر هذه الخلاصة حسب الفلاتر المختارة، وتُطبع كذلك في التقرير التفصيلي عند اختيار معلمة محددة.")
+        col_note1, col_note2 = st.columns(2)
+        with col_note1:
+            html_parts = []
+            html_parts.append(_render_note_card("💪 نجاحات المعلم", _note_values_for_dashboard(filtered, "نجاحات المعلم"), "#10b981"))
+            html_parts.append(_render_note_card("🌟 نقاط القوة في أدائي العام", _note_values_for_dashboard(filtered, "نقاط القوة في أدائي العام"), "#10b981"))
+            html_parts.append(_render_note_card("⭐ أبرز نقاط القوة", _note_values_for_dashboard(filtered, "أبرز نقاط القوة"), "#10b981"))
+            html_parts.append(_render_note_card("✅ توظيف جوانب التميز لديها", _note_values_for_dashboard(filtered, "توظيف جوانب التميز لديها"), "#10b981"))
+            html = "".join([x for x in html_parts if x])
+            if html:
+                st.markdown(html, unsafe_allow_html=True)
+            else:
+                st.info("لا توجد نقاط قوة مسجلة حسب الفلاتر الحالية.")
+        with col_note2:
+            html_parts = []
+            html_parts.append(_render_note_card("🛠️ جوانب بحاجة إلى تطوير", _note_values_for_dashboard(filtered, "جوانب بحاجة إلى تطوير"), "#f97316"))
+            html_parts.append(_render_note_card("⚠️ نقاط الضعف التي تحتاج إلى تطوير", _note_values_for_dashboard(filtered, "نقاط الضعف التي تحتاج إلى تطوير"), "#f97316"))
+            html_parts.append(_render_note_card("📌 أبرز الجوانب التي تحتاج إلى تطوير", _note_values_for_dashboard(filtered, "أبرز الجوانب التي تحتاج إلى تطوير"), "#f97316"))
+            html_parts.append(_render_note_card("🤝 الدعم المطلوب / المقدم", _note_values_for_dashboard(filtered, "الدعم المطلوب من زيارات القيادة الوسطى") + _note_values_for_dashboard(filtered, "الدعم المقدم لها"), "#3b82f6"))
+            html = "".join([x for x in html_parts if x])
+            if html:
+                st.markdown(html, unsafe_allow_html=True)
+            else:
+                st.info("لا توجد جوانب تطوير مسجلة حسب الفلاتر الحالية.")
+
     # ── PDF تنزيل التقرير ─────────────────────────────────────────────────────
     section_title("📄", "تنزيل التقرير")
 
@@ -2107,6 +2162,8 @@ def show_analysis(df, allowed_dept):
     text_cols = [
         "نجاحات المعلم", "جوانب بحاجة إلى تطوير",
         "نقاط القوة في أدائي العام", "نقاط الضعف التي تحتاج إلى تطوير",
+        "أبرز نقاط القوة", "أبرز الجوانب التي تحتاج إلى تطوير",
+        "الدعم المقدم لها", "توظيف جوانب التميز لديها", "مدى التحسين في الأداء",
         "الدعم المطلوب من زيارات القيادة الوسطى", "مقترحاتي لتطوير أدائي",
         "الأهداف التعليمية للحصة", "أساليب واستراتيجيات التدريس الملحوظة",
         "ما الذي يمكن أن أستفيد منه لتطوير ممارساتي التدريسية",

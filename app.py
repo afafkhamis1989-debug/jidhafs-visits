@@ -290,7 +290,7 @@ st.markdown("""
 [data-testid="stSidebar"] .stTextInput input {
     background: rgba(255,255,255,0.1) !important;
     border: 1px solid rgba(126,179,247,0.4) !important;
-    color: white !important; border-radius: 8px !important;
+    color: black !important; border-radius: 8px !important;
 }
 
 .page-header {

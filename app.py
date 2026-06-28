@@ -82,6 +82,28 @@ ITEMS_STRUCTURE = {
     ]
 }
 
+# قاموس أسماء البنود القصيرة للعرض في الرسوم البيانية
+ITEM_NAMES = {
+    1:  "إظهار المعارف والمهارات الأساسية",
+    2:  "تحقيق التقدم واكتساب مهارات التعلم",
+    3:  "اتساق التخطيط مع الكفايات واحتياجات الطلبة",
+    4:  "توفير بيئة تعلم آمنة ومحفزة",
+    5:  "تضمين الموقف إرشادات وتوجيهات واضحة",
+    6:  "استثمار الوقت لتحقيق أهداف التعلم",
+    7:  "تحفيز الطلبة ورفع دافعيتهم",
+    8:  "سلامة المادة العلمية ومراعاة الكفايات",
+    9:  "توظيف استراتيجيات تعليم وتعلم فاعلة",
+    10: "توظيف التقويم ودعم فئات المتعلمين",
+    11: "تنمية مهارات التفكير العليا",
+    12: "توظيف التعليم المتمايز",
+    13: "توظيف الموارد التعليمية والتكنولوجية",
+    14: "تنمية المهارات التكنولوجية والبحثية",
+    15: "التزام القيم الإسلامية والوطنية والرقمية",
+    16: "الانضباط الذاتي وتحمل المسؤولية",
+    17: "التواصل والمشاركة الفاعلة",
+    18: "الثقة بالنفس والقيادة والابتكار",
+}
+
 DOMAIN_ICONS = {
     "الإنجاز الأكاديمي": "🎓",
     "التخطيط وإدارة الموقف التعليمي": "📋",
@@ -450,33 +472,49 @@ def percent_color(p):
     return "pink"
 
 
-def make_rtl_bar_h(y_vals, x_vals, colors, title_text=""):
-    """رسم بياني أفقي RTL: النصوص يمين، الأرقام يسار"""
+def make_rtl_bar_h(y_vals, x_vals, colors, title_text="", label_fontsize=13, right_margin=320):
+    """
+    رسم بياني أفقي حقيقي RTL:
+    - النصوص (أسماء البنود) على اليمين
+    - الأشرطة تمتد من اليمين إلى اليسار
+    - الأرقام (%) تظهر على يسار الشريط خارجه
+    الحيلة: نعكس محور X (autorange=reversed) ونضع النصوص side=right
+    وتوضع النسب كـ x سالبة حتى تخرج جهة اليسار.
+    """
+    # نحوّل القيم إلى سالبة حتى تمتد من اليمين (0) إلى اليسار
+    neg_x = [-v for v in x_vals]
+
     fig = go.Figure(go.Bar(
-        x=x_vals,
+        x=neg_x,
         y=y_vals,
         orientation="h",
         marker_color=colors,
-        text=[f"{v}%" for v in x_vals],
+        text=[f"  {v}%  " for v in x_vals],
         textposition="outside",
-        textfont=dict(size=13, color="#111827", family="Tajawal"),
+        textfont=dict(size=label_fontsize, color="#111827", family="Tajawal"),
+        hovertemplate="%{y}<br>النسبة: %{customdata}%<extra></extra>",
+        customdata=x_vals,
     ))
     fig.update_layout(
         xaxis=dict(
-            range=[0, 118],
+            range=[-118, 0],          # السالب يسار، الصفر يمين
             showgrid=True,
             gridcolor="#f0f4f8",
-            zeroline=False,
+            zeroline=True,
+            zerolinecolor="#d1d5db",
+            tickvals=[-100, -75, -50, -25, 0],
+            ticktext=["100%", "75%", "50%", "25%", "0%"],
+            tickfont=dict(size=11, family="Tajawal"),
             side="bottom",
         ),
         yaxis=dict(
-            tickfont=dict(size=13, family="Tajawal"),
+            tickfont=dict(size=label_fontsize, family="Tajawal"),
             autorange="reversed",   # أعلى قيمة فوق
-            side="right",           # ✅ النصوص جهة اليمين
+            side="right",           # ✅ أسماء البنود على اليمين
         ),
         plot_bgcolor="white",
         paper_bgcolor="white",
-        margin=dict(l=10, r=240, t=20, b=10),
+        margin=dict(l=80, r=right_margin, t=20, b=30),
         font=dict(family="Tajawal"),
     )
     return fig
@@ -606,9 +644,11 @@ def show_analysis(df, allowed_dept):
             fig = make_rtl_bar_h(
                 df_dom["المجال"].tolist(),
                 df_dom["النسبة"].tolist(),
-                colors_d
+                colors_d,
+                label_fontsize=13,
+                right_margin=260,
             )
-            fig.update_layout(height=300)
+            fig.update_layout(height=320)
             st.plotly_chart(fig, use_container_width=True)
 
         with col_b:
@@ -639,20 +679,23 @@ def show_analysis(df, allowed_dept):
             vals = filtered[col].map(JUDGMENT_WEIGHTS).dropna().tolist()
             if vals:
                 ip = round((sum(vals)/(len(vals)*4))*100, 1)
-                items_result.append({"البند": f"بند {i}", "النسبة": ip, "الحكم": get_general_judgment(ip)})
+                label = f"{i}. {ITEM_NAMES.get(i, f'بند {i}')}"
+                items_result.append({"البند": f"بند {i}", "الاسم": label, "النسبة": ip, "الحكم": get_general_judgment(ip)})
 
     if items_result:
         df_items = pd.DataFrame(items_result).sort_values("النسبة", ascending=True)
         colors_i = [JUDGMENT_COLORS.get(get_general_judgment(p), "#2563eb") for p in df_items["النسبة"]]
         fig2 = make_rtl_bar_h(
-            df_items["البند"].tolist(),
+            df_items["الاسم"].tolist(),
             df_items["النسبة"].tolist(),
-            colors_i
+            colors_i,
+            label_fontsize=12,
+            right_margin=380,
         )
-        fig2.update_layout(height=520, margin=dict(l=10, r=100, t=20, b=10))
+        fig2.update_layout(height=580)
         st.plotly_chart(fig2, use_container_width=True)
 
-        # ✅ جديد: أفضل 3 بنود وأضعف 3 بنود
+        # أفضل 3 بنود وأضعف 3 بنود
         df_items_sorted = df_items.sort_values("النسبة", ascending=False)
         col_best, col_worst = st.columns(2)
         with col_best:
@@ -662,9 +705,9 @@ def show_analysis(df, allowed_dept):
             for _, row in df_items_sorted.head(3).iterrows():
                 st.markdown(f"""
                 <div style="display:flex; justify-content:space-between; align-items:center;
-                            background:white; border-radius:8px; padding:8px 12px; margin-bottom:6px;">
-                    <span style="font-weight:700; color:#111827">{row['البند']}</span>
-                    <span style="font-size:15px; font-weight:900; color:#10b981">{row['النسبة']}%</span>
+                            background:white; border-radius:8px; padding:8px 12px; margin-bottom:6px; gap:8px;">
+                    <span style="font-weight:700; color:#111827; font-size:13px">{row['الاسم']}</span>
+                    <span style="font-size:15px; font-weight:900; color:#10b981; flex-shrink:0">{row['النسبة']}%</span>
                 </div>""", unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
 
@@ -675,14 +718,14 @@ def show_analysis(df, allowed_dept):
             for _, row in df_items_sorted.tail(3).iterrows():
                 st.markdown(f"""
                 <div style="display:flex; justify-content:space-between; align-items:center;
-                            background:white; border-radius:8px; padding:8px 12px; margin-bottom:6px;">
-                    <span style="font-weight:700; color:#111827">{row['البند']}</span>
-                    <span style="font-size:15px; font-weight:900; color:#f472b6">{row['النسبة']}%</span>
+                            background:white; border-radius:8px; padding:8px 12px; margin-bottom:6px; gap:8px;">
+                    <span style="font-weight:700; color:#111827; font-size:13px">{row['الاسم']}</span>
+                    <span style="font-size:15px; font-weight:900; color:#f472b6; flex-shrink:0">{row['النسبة']}%</span>
                 </div>""", unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
 
         with st.expander("📋 عرض جدول البنود التفصيلي"):
-            st.dataframe(df_items_sorted, use_container_width=True, hide_index=True)
+            st.dataframe(df_items_sorted[["الاسم", "النسبة", "الحكم"]], use_container_width=True, hide_index=True)
 
     # ── 4. JUDGMENT DISTRIBUTION ──────────────────────────────────────────────
     section_title("🎯", "توزيع الأحكام الكلي")
@@ -821,9 +864,11 @@ def show_analysis(df, allowed_dept):
         fig_d = make_rtl_bar_h(
             ddf_chart["القسم"].tolist(),
             ddf_chart["النسبة %"].tolist(),
-            colors_dept
+            colors_dept,
+            label_fontsize=13,
+            right_margin=240,
         )
-        fig_d.update_layout(height=max(300, len(ddf)*40), margin=dict(l=10, r=260, t=20, b=10))
+        fig_d.update_layout(height=max(320, len(ddf)*48))
         st.plotly_chart(fig_d, use_container_width=True)
 
         # ✅ جدول الترتيب مع الميدالية

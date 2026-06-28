@@ -9,9 +9,9 @@ import os
 import sys
 import subprocess
 
-# ── PDF — استيراد المكتبات ──────────────────────────────────────────────────
-# ملاحظة مهمة:
-# لا نثبت المكتبات داخل Streamlit بالكود. ضعيها في requirements.txt
+# ── PDF — استيراد المكتبات والخط العربي تلقائياً ─────────────────────────────
+# ملاحظة:
+# ضعي المكتبات في requirements.txt ولا تثبتيها من داخل Streamlit.
 # reportlab
 # arabic-reshaper
 # python-bidi
@@ -39,37 +39,102 @@ except Exception as e:
     PDF_READY = False
     PDF_ERROR = f"فشل استيراد مكتبات PDF: {e}"
 
-# تسجيل خط عربي/يدعم العربية للـ PDF
-# الأفضل أن تضعي ملفي Amiri-Regular.ttf و Amiri-Bold.ttf داخل مجلد fonts بجانب app.py
-# وإذا لم توجد، يستخدم DejaVu الموجود غالباً في Streamlit Cloud.
-if PDF_READY:
-    try:
-        _base_dir = os.path.dirname(os.path.abspath(__file__))
-    except Exception:
-        _base_dir = os.getcwd()
 
-    _font_candidates = [
-        (os.path.join(_base_dir, "fonts", "Amiri-Regular.ttf"), os.path.join(_base_dir, "fonts", "Amiri-Bold.ttf")),
-        (os.path.join(_base_dir, "Amiri-Regular.ttf"), os.path.join(_base_dir, "Amiri-Bold.ttf")),
+def _safe_base_dir():
+    try:
+        return os.path.dirname(os.path.abspath(__file__))
+    except Exception:
+        return os.getcwd()
+
+
+def _download_file(url, target_path, timeout=25):
+    """تحميل ملف صغير مثل الخطوط عند الحاجة فقط."""
+    import urllib.request
+    os.makedirs(os.path.dirname(target_path), exist_ok=True)
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        data = resp.read()
+    if len(data) < 10000:
+        raise RuntimeError("الملف المحمّل صغير جداً وقد لا يكون خطاً صحيحاً.")
+    with open(target_path, "wb") as f:
+        f.write(data)
+    return target_path
+
+
+def _ensure_arabic_fonts():
+    """
+    يحاول إيجاد خط عربي محلياً، وإذا لم يجده يحمله تلقائياً في مجلد .streamlit_fonts.
+    لا يحتاج منك إنشاء مجلد fonts يدوياً.
+    """
+    base_dir = _safe_base_dir()
+    cache_dir = os.path.join(base_dir, ".streamlit_fonts")
+
+    amiri_r = os.path.join(cache_dir, "Amiri-Regular.ttf")
+    amiri_b = os.path.join(cache_dir, "Amiri-Bold.ttf")
+
+    # تحميل Amiri تلقائياً إذا لم يوجد
+    if not (os.path.exists(amiri_r) and os.path.exists(amiri_b)):
+        download_sources = [
+            (
+                "https://raw.githubusercontent.com/google/fonts/main/ofl/amiri/Amiri-Regular.ttf",
+                "https://raw.githubusercontent.com/google/fonts/main/ofl/amiri/Amiri-Bold.ttf",
+            ),
+            (
+                "https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Regular.ttf",
+                "https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Bold.ttf",
+            ),
+        ]
+        for url_r, url_b in download_sources:
+            try:
+                _download_file(url_r, amiri_r)
+                _download_file(url_b, amiri_b)
+                break
+            except Exception:
+                try:
+                    if os.path.exists(amiri_r):
+                        os.remove(amiri_r)
+                    if os.path.exists(amiri_b):
+                        os.remove(amiri_b)
+                except Exception:
+                    pass
+
+    candidates = [
+        # الخط المحمّل تلقائياً
+        (amiri_r, amiri_b),
+
+        # خطوط مرفوعة مع المشروع
+        (os.path.join(base_dir, "fonts", "Amiri-Regular.ttf"), os.path.join(base_dir, "fonts", "Amiri-Bold.ttf")),
+        (os.path.join(base_dir, "Amiri-Regular.ttf"), os.path.join(base_dir, "Amiri-Bold.ttf")),
+
+        # خطوط غالباً موجودة في Linux / Streamlit Cloud
         ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+        ("/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf", "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Bold.ttf"),
+        ("/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf", "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf"),
         ("/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf", "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf"),
     ]
 
-    for _r, _b in _font_candidates:
-        if os.path.exists(_r) and os.path.exists(_b):
+    errors = []
+    for regular_path, bold_path in candidates:
+        if os.path.exists(regular_path) and os.path.exists(bold_path):
             try:
-                pdfmetrics.registerFont(TTFont("ArabicPDF", _r))
-                pdfmetrics.registerFont(TTFont("ArabicPDF-Bold", _b))
-                _reg_font = "ArabicPDF"
-                _reg_bold = "ArabicPDF-Bold"
-                break
+                pdfmetrics.registerFont(TTFont("ArabicPDF", regular_path))
+                pdfmetrics.registerFont(TTFont("ArabicPDF-Bold", bold_path))
+                return "ArabicPDF", "ArabicPDF-Bold", ""
             except Exception as e:
-                PDF_ERROR = f"فشل تسجيل الخط: {e}"
+                errors.append(f"{regular_path}: {e}")
 
-    if not _reg_font or not _reg_bold:
+    return None, None, "لم يتم العثور على خط عربي مناسب ولم ينجح تحميل Amiri تلقائياً. " + (" | ".join(errors[-3:]) if errors else "")
+
+
+if PDF_READY:
+    try:
+        _reg_font, _reg_bold, _font_error = _ensure_arabic_fonts()
+        if not _reg_font or not _reg_bold:
+            PDF_READY = False
+            PDF_ERROR = _font_error
+    except Exception as e:
         PDF_READY = False
-        if not PDF_ERROR:
-            PDF_ERROR = "لم يتم العثور على خط عربي. ضعي Amiri-Regular.ttf و Amiri-Bold.ttf داخل مجلد fonts."
+        PDF_ERROR = f"فشل تجهيز الخط العربي: {e}"
 
 DEFAULT_EXCEL_URL = "https://moebh-my.sharepoint.com/:x:/g/personal/890302057_moe_bh/IQARg9ekg-gGR6izAPSeAlzTATuVdP8MoMG5g0O9aOIlGzI?e=vQIoab&download=1"
 HEADER_PATH = "header.png"
@@ -1785,4 +1850,5 @@ st.markdown("""
     <span>تصميم وبرمجة: <span class="highlight">أ. عفاف حسين</span></span>
 </div>
 """, unsafe_allow_html=True)
+
 

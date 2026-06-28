@@ -1,10 +1,12 @@
 import streamlit as st
 import pandas as pd
 import requests
+from io import BytesIO
 import plotly.graph_objects as go
 
-# مصدر البيانات: اربطي Microsoft Forms بملف Excel ثم اجعلي التطبيق يقرأ الشيت النهائي بنفس الأعمدة
-GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbziZ27mG690ZT02YN1LqbvWJLZ-rprnHK9qmXDDXcTvQVmnB-Phpm0J4DKjsg6Ts07xJQ/exec"
+# مصدر البيانات: ملف Excel المرتبط بـ Microsoft Forms على SharePoint / OneDrive
+# يمكن تغيير الرابط من Streamlit secrets باسم EXCEL_URL أو تعديله هنا مباشرة.
+DEFAULT_EXCEL_URL = "https://moebh-my.sharepoint.com/:x:/g/personal/890302057_moe_bh/IQARg9ekg-gGR6izAPSeAlzTATuVdP8MoMG5g0O9aOIlGzI?e=owOi83"
 HEADER_PATH = "header.png"
 
 st.set_page_config(
@@ -333,11 +335,171 @@ def normalize_text(x):
             .replace("آ","ا").replace("ة","ه"))
 
 
-@st.cache_data(ttl=60)
-def get_sheet_data(sheet_name):
-    res = requests.get(GOOGLE_SCRIPT_URL, params={"sheet_name": sheet_name}, timeout=25)
-    res.raise_for_status()
-    return pd.DataFrame(res.json())
+def clean_col_name(x):
+    return str(x).replace("\xa0", " ").strip()
+
+
+def first_existing_col(df, candidates):
+    cols = {clean_col_name(c): c for c in df.columns}
+    for cand in candidates:
+        cand_clean = clean_col_name(cand)
+        if cand_clean in cols:
+            return cols[cand_clean]
+    return None
+
+
+def combine_first_non_empty(df, candidates):
+    """يرجع أول قيمة غير فارغة من مجموعة أعمدة محتملة في نفس الصف."""
+    found = [c for c in candidates if c in df.columns]
+    if not found:
+        return pd.Series([pd.NA] * len(df), index=df.index)
+    result = df[found[0]].copy()
+    for col in found[1:]:
+        result = result.combine_first(df[col])
+    return result
+
+
+def guess_ms_forms_download_urls(url):
+    """يجرب أكثر من صيغة لأن روابط SharePoint تختلف حسب الصلاحيات."""
+    urls = []
+    base = str(url).strip()
+    if not base:
+        return urls
+    urls.append(base)
+    joiner = "&" if "?" in base else "?"
+    urls.append(base + joiner + "download=1")
+    return list(dict.fromkeys(urls))
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def load_excel_from_url(url):
+    last_error = None
+    for test_url in guess_ms_forms_download_urls(url):
+        try:
+            res = requests.get(test_url, timeout=40, allow_redirects=True)
+            res.raise_for_status()
+            content_type = res.headers.get("content-type", "").lower()
+            if "text/html" in content_type and b"<html" in res.content[:500].lower():
+                last_error = "الرابط رجّع صفحة HTML وليس ملف Excel. غالباً يحتاج صلاحية أو رابط تنزيل مباشر."
+                continue
+            return pd.read_excel(BytesIO(res.content), sheet_name="Main")
+        except Exception as e:
+            last_error = str(e)
+    raise RuntimeError(last_error or "تعذّر تحميل ملف Excel من الرابط.")
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def load_excel_from_upload(uploaded_file):
+    return pd.read_excel(uploaded_file, sheet_name="Main")
+
+
+def standardize_ms_forms_dataframe(raw_df):
+    """يوحّد أعمدة Microsoft Forms إلى الأعمدة التي تعتمد عليها لوحة التحليل."""
+    df = raw_df.copy()
+    df.columns = [clean_col_name(c) for c in df.columns]
+
+    out = pd.DataFrame(index=df.index)
+    out["ID"] = combine_first_non_empty(df, ["ID"])
+    out["وقت البدء"] = combine_first_non_empty(df, ["Start time", "وقت البدء"])
+    out["وقت الإكمال"] = combine_first_non_empty(df, ["Completion time", "وقت الإكمال"])
+    out["البريد الإلكتروني"] = combine_first_non_empty(df, ["Email", "البريد الإلكتروني"])
+    out["اسم المعلمة"] = combine_first_non_empty(df, ["اسم المعلمة"])
+    out["القسم الأكاديمي"] = combine_first_non_empty(df, ["القسم الأكاديمي", "الأقسام الأكاديمية"])
+    out["السنة الدراسية"] = combine_first_non_empty(df, ["السنة الدراسية", "السنة الدراسية2"])
+    out["الفصل الدراسي"] = combine_first_non_empty(df, ["الفصل الدراسي", "الفصل الدراسي2"])
+    out["الشهر"] = combine_first_non_empty(df, ["الشهر"])
+    out["الزائر"] = combine_first_non_empty(df, ["الزائر"])
+    out["نوع السجل"] = combine_first_non_empty(df, ["استمارات للقيادة الوسطى", "نوع السجل"])
+    out["عدد الزيارات"] = combine_first_non_empty(df, ["عدد الزيارات2", "عدد الزيارات"])
+
+    # البنود في Microsoft Forms مكررة لثلاث استمارات: زيارة صفية، تقييم ذاتي، توأمة.
+    # نأخذ أول إجابة غير فارغة من الأعمدة المتطابقة في المعنى.
+    item_patterns = {
+        1: ["إظهار الطلبة المعارف والمهارات الأساسية", "اظهار الطلبة المعارف والمهارات الأساسية"],
+        2: ["تحقيق الطلبة التقدم خلال الدروس"],
+        3: ["اتساق تخطيط الدروس"],
+        4: ["توفير بيئة تعلم"],
+        5: ["تضمين الموقف التعليمي إرشادات"],
+        6: ["استثمار الوقت"],
+        7: ["تحفيز", "رفع دافعيتهم"],
+        8: ["سلامة المادة العلمية"],
+        9: ["توظيف إستراتيجيات تعليم وتعلم", "توظيف استراتيجيات تعليم وتعلم"],
+        10: ["توظيف التقويم"],
+        11: ["تنمية مهارات التفكير العليا"],
+        12: ["التعليم التمايز", "التعليم المتمايز"],
+        13: ["توظيف المصادر والموارد التعليمية"],
+        14: ["تنمية مهارات الطلبة التكنولوجية"],
+        15: ["التزام الطلبة بالقيم الإسلامية", "التزام الطلبة بالقيم الاسلامية"],
+        16: ["التزام الطلبة السلوك الإيجابي", "التزام الطلبة السلوك الايجابي"],
+        17: ["قدرة الطلبة على التواصل"],
+        18: ["إظهار الطلبة الثقة بالنفس", "اظهار الطلبة الثقة بالنفس"],
+    }
+
+    used_cols = set()
+    for item_no, patterns in item_patterns.items():
+        matches = []
+        for col in df.columns:
+            col_clean = clean_col_name(col)
+            for pat in patterns:
+                if pat in col_clean:
+                    matches.append(col)
+                    break
+        # لا نحذف الأعمدة المكررة، لأن المطلوب دمج نسخ الاستمارات الثلاث لنفس البند.
+        out[f"بند {item_no}"] = combine_first_non_empty(df, matches)
+        used_cols.update(matches)
+
+    text_mapping = {
+        "نجاحات المعلم": ["نجاحات المعلم"],
+        "جوانب بحاجة إلى تطوير": ["جوانب بحاجة إلى تطوير"],
+        "أبرز نقاط القوة": ["أبرز نقاط القوة"],
+        "أبرز الجوانب التي تحتاج إلى تطوير": ["أبرز الجوانب التي تحتاج إلى تطوير"],
+        "الدعم المقدم لها": ["الدعم المقدم لها"],
+        "توظيف جوانب التميز لديها": ["توظيف جوانب التميز لديها"],
+        "مدى التحسين في الأداء": ["مدى التحسين في الأداء"],
+        "نقاط القوة في أدائي العام": ["نقاط القوة في أدائي العام"],
+        "نقاط الضعف التي تحتاج إلى تطوير": ["نقاط الضعف التي تحتاج إلى تطوير"],
+        "الدعم المطلوب من زيارات القيادة الوسطى": ["ما نوع الدعم الذي أحتاجه من القيادة الوسطى لتطوير أدائي", "الدعم المطلوب من زيارات القيادة الوسطى"],
+        "مقترحاتي لتطوير أدائي": ["مقترحاتي لتطوير أدائي في المواقف التعليمية", "مقترحاتي لتطوير أدائي"],
+        "المعلم الزائر": ["المعلم الزائر", "المعلم المزور"],
+        "القسم الأكاديمي للمعلم الزائر": ["القسم الأكاديمي للمعلم الزائر", "القسم الأكاديمي للمعلم المزور"],
+        "اسم المدرسة للمعلم الزائر": ["اسم المدرسة للمعلم الزائر"],
+        "اسم المدرسة للمعلم المزور": ["اسم المدرسة للمعلم المزور", "اسم المدرسة (إذا كان/ت من مدرسة أخرى)"],
+        "الأهداف التعليمية للحصة": ["الأهداف التعليمية للحصة"],
+        "أساليب واستراتيجيات التدريس الملحوظة": ["أساليب واستراتيجيات التدريس الملحوظة"],
+        "ما الذي يمكن أن أستفيد منه لتطوير ممارساتي التدريسية": ["ما الذي يمكن أن أستفيد منه لتطوير ممارساتي التدريسية"],
+        "أفكار جديدة يمكن أن أستفيد منها لتطوير ممارساتي التدريسية": ["أفكار جديدة يمكن أن أستفيد منه لتطوير ممارساتي التدريسية", "أفكار جديدة يمكن أن أستفيد منها لتطوير ممارساتي التدريسية"],
+        "توصيات المعلم المزور": ["توصيات المعلم المزور", "توصيات المعلم المزور (خاص بالمعلم المزور)"],
+    }
+    for out_col, candidates in text_mapping.items():
+        out[out_col] = combine_first_non_empty(df, candidates)
+
+    # تنظيف نوع السجل حتى تظهر الفلاتر بشكل مفهوم
+    out["نوع السجل"] = out["نوع السجل"].astype("string").str.strip()
+    out["نوع السجل"] = out["نوع السجل"].replace({
+        "استمارة الزيارة الصفية": "زيارة صفية",
+        "استمارة التقييم الذاتي": "تقييم ذاتي",
+        "استمارة التوأمة الموجهة": "توأمة موجهة",
+    })
+    out["نوع السجل"] = out["نوع السجل"].fillna("زيارة صفية")
+
+    # إزالة الصفوف الفارغة أو التجريبية التي لا تحتوي اسم معلمة
+    out = out[out["اسم المعلمة"].notna() & (out["اسم المعلمة"].astype(str).str.strip() != "")]
+    return out
+
+
+def get_excel_url():
+    try:
+        return st.secrets.get("EXCEL_URL", DEFAULT_EXCEL_URL)
+    except Exception:
+        return DEFAULT_EXCEL_URL
+
+
+def get_forms_data(uploaded_file=None):
+    if uploaded_file is not None:
+        raw = load_excel_from_upload(uploaded_file)
+    else:
+        raw = load_excel_from_url(get_excel_url())
+    return standardize_ms_forms_dataframe(raw)
 
 
 def calculate_percentage(df):
@@ -752,13 +914,25 @@ st.markdown(f"""
 </div>""", unsafe_allow_html=True)
 
 # Load data only — no internal Streamlit forms
+st.sidebar.markdown("---")
+if st.sidebar.button("🔄 تحديث البيانات"):
+    st.cache_data.clear()
+    st.rerun()
+
+uploaded_excel = st.sidebar.file_uploader(
+    "رفع ملف Excel بديل عند تعذر قراءة SharePoint",
+    type=["xlsx"],
+    help="استخدميه فقط إذا رابط SharePoint يحتاج صلاحية ولا يفتح من Streamlit Cloud."
+)
+
 try:
-    visits_df = get_sheet_data("Classroom_Visits")
-    visits_df.columns = [str(c).strip() for c in visits_df.columns]
+    with st.spinner("جاري تحميل بيانات Microsoft Forms..."):
+        visits_df = get_forms_data(uploaded_excel)
     show_analysis(visits_df, allowed_dept)
 except Exception as e:
-    st.error("⚠️ تعذّر تحميل بيانات الزيارات")
-    st.write(e)
+    st.error("⚠️ تعذّر تحميل بيانات الزيارات من رابط SharePoint.")
+    st.info("إذا ظهر هذا الخطأ في Streamlit Cloud، غالباً الرابط يحتاج تسجيل دخول. الحل السريع: حمّلي ملف Excel من Forms وارفعيه من الزر الجانبي، أو خلي الرابط Anyone with the link can view إن كان مسموح في الوزارة.")
+    st.code(str(e))
 
 # Footer
 st.markdown("""

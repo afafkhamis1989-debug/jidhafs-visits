@@ -375,6 +375,89 @@ st.markdown("""
 .rank-name { font-size: 15px; font-weight: 700; color: #111827; }
 .rank-sub  { font-size: 12px; color: #6b7280; }
 
+
+
+/* Power BI style cards for best / weakest items */
+.insight-wrap{
+    background:linear-gradient(180deg,#ffffff 0%,#f8fafc 100%);
+    border:1px solid #e5e7eb;
+    border-radius:18px;
+    padding:18px 18px 16px 18px;
+    margin:10px 0 16px 0;
+    box-shadow:0 10px 28px rgba(15,32,68,0.08);
+    position:relative;
+    overflow:hidden;
+    min-height:245px;
+}
+.insight-wrap::before{
+    content:"";
+    position:absolute;
+    inset:0 auto 0 0;
+    width:6px;
+    background:#2563eb;
+}
+.insight-wrap.best::before{background:linear-gradient(180deg,#10b981,#34d399);} 
+.insight-wrap.weak::before{background:linear-gradient(180deg,#f97316,#f472b6);} 
+.insight-title{
+    text-align:center;
+    font-size:17px;
+    font-weight:900;
+    color:#0f2044;
+    margin:0 0 14px 0;
+    padding-bottom:12px;
+    border-bottom:1px solid #e5e7eb;
+}
+.insight-row{
+    display:grid;
+    grid-template-columns:42px 1fr 74px;
+    gap:12px;
+    align-items:center;
+    background:#ffffff;
+    border:1px solid #eef2f7;
+    border-radius:14px;
+    padding:11px 12px;
+    margin-bottom:10px;
+    box-shadow:0 2px 10px rgba(15,32,68,0.05);
+}
+.insight-rank{
+    width:34px;
+    height:34px;
+    border-radius:12px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-weight:900;
+    color:white;
+    background:linear-gradient(135deg,#1a3a6e,#2563eb);
+}
+.insight-wrap.best .insight-rank{background:linear-gradient(135deg,#059669,#10b981);} 
+.insight-wrap.weak .insight-rank{background:linear-gradient(135deg,#ea580c,#f472b6);} 
+.insight-name{
+    font-size:13px;
+    font-weight:800;
+    color:#111827;
+    line-height:1.55;
+}
+.insight-percent{
+    justify-self:end;
+    min-width:66px;
+    text-align:center;
+    border-radius:999px;
+    padding:6px 8px;
+    font-size:15px;
+    font-weight:900;
+}
+.insight-wrap.best .insight-percent{background:#d1fae5;color:#065f46;}
+.insight-wrap.weak .insight-percent{background:#fce7f3;color:#9d174d;}
+.chart-card{
+    background:#ffffff;
+    border:1px solid #e5e7eb;
+    border-radius:16px;
+    padding:8px 10px 2px 10px;
+    box-shadow:0 2px 12px rgba(15,32,68,0.06);
+    margin-bottom:14px;
+}
+
 .footer {
     background: #0f2044; border-radius: 12px; padding: 16px 28px;
     margin-top: 32px; display: flex; justify-content: space-between; align-items: center;
@@ -683,8 +766,8 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
     # ── حجم الصفحة والهوامش ───────────────────────────────────────────────
     PAGE_W, PAGE_H = A4
     # إذا لم يوجد شعار، لا نترك فراغاً كبيراً أعلى الصفحة
-    HEADER_H = 3.2 * cm if _header_img else 0.55 * cm
-    TOP_MARGIN = HEADER_H + 0.25 * cm
+    HEADER_H = 2.35 * cm if _header_img else 0.25 * cm
+    TOP_MARGIN = HEADER_H + 0.08 * cm
 
     from reportlab.lib.utils import ImageReader
 
@@ -710,14 +793,14 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
         canvas_obj.restoreState()
 
     frame = Frame(
-        x1=2*cm, y1=1.5*cm,
-        width=PAGE_W - 4*cm,
-        height=PAGE_H - TOP_MARGIN - 2*cm,
+        x1=1.55*cm, y1=1.25*cm,
+        width=PAGE_W - 3.1*cm,
+        height=PAGE_H - TOP_MARGIN - 1.55*cm,
     )
     doc = BaseDocTemplate(
         buf, pagesize=A4,
-        rightMargin=2*cm, leftMargin=2*cm,
-        topMargin=TOP_MARGIN, bottomMargin=1.5*cm,
+        rightMargin=1.55*cm, leftMargin=1.55*cm,
+        topMargin=TOP_MARGIN, bottomMargin=1.25*cm,
         title="تقرير الزيارات الصفية",
     )
     doc.addPageTemplates([PageTemplate(id="main", frames=[frame], onPage=_draw_header)])
@@ -764,7 +847,7 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
     story = []
 
     # ── غلاف ──────────────────────────────────────────────────────────────
-    story.append(Spacer(1, 0.15*cm))
+    story.append(Spacer(1, 0.03*cm))
     story.append(Paragraph(ar("تقرير الزيارات الصفية"), S["title"]))
     story.append(Paragraph(ar("مدرسة جدحفص الثانوية للبنات"), S["subtitle"]))
     # القسم سيظهر ضمن جدول الفلاتر فقط لتجنب التكرار
@@ -780,11 +863,12 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
         ft_data = []
         for k in keys_order:
             v = filter_info.get(k, "الكل")
+            k_display = str(k).replace(" ", "\u00A0")
             ft_data.append([
                 Paragraph(ar(str(v)), ParagraphStyle("filter_value", fontName=_reg_font, fontSize=10, alignment=TA_RIGHT, leading=15)),
-                Paragraph(ar(k), ParagraphStyle("filter_label", fontName=_reg_bold, fontSize=10, alignment=TA_CENTER, leading=15)),
+                Paragraph(ar(k_display), ParagraphStyle("filter_label", fontName=_reg_bold, fontSize=10, alignment=TA_CENTER, leading=15)),
             ])
-        ft = Table(ft_data, colWidths=[11.5*cm, 4.0*cm], repeatRows=0)
+        ft = Table(ft_data, colWidths=[12.0*cm, 4.2*cm], repeatRows=0)
         ft.setStyle(TableStyle([
             ("BACKGROUND", (1,0), (1,-1), colors.HexColor("#f1f5f9")),
             ("BACKGROUND", (0,0), (0,-1), colors.white),
@@ -820,7 +904,7 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
          Paragraph(ar(f"{percent}%"), ParagraphStyle("kv2", fontName=_reg_bold, fontSize=22, alignment=TA_CENTER, leading=28, textColor=j_color)),
          Paragraph(ar(judgment),      ParagraphStyle("kv3", fontName=_reg_bold, fontSize=13, alignment=TA_CENTER, leading=20, textColor=j_color))],
     ]
-    kpi_tbl = Table(kpi_data, colWidths=[3.8*cm]*4)
+    kpi_tbl = Table(kpi_data, colWidths=[4.05*cm]*4)
     kpi_tbl.setStyle(TableStyle([
         ("BOX",         (0,0), (-1,-1), 0.5, colors.HexColor("#e5e7eb")),
         ("INNERGRID",   (0,0), (-1,-1), 0.5, colors.HexColor("#e5e7eb")),
@@ -883,8 +967,6 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
         story.append(Spacer(1, 0.35*cm))
         story.append(Paragraph(ar("رسم بياني للمجالات"), S["h2"]))
         chart_rows = [[Paragraph(ar("النسبة"), S["tbl_hdr"]), Paragraph(ar("الرسم البياني"), S["tbl_hdr"]), Paragraph(ar("المجال"), S["tbl_hdr"] )]]
-        for row in domains_result if 'domains_result' in locals() else []:
-            pass
         # إعادة بناء بيانات المجالات من الجدول أعلاه
         for domain, items in ITEMS_STRUCTURE.items():
             dcols = [f"بند {n}" for n, _ in items if f"بند {n}" in filtered_df.columns]
@@ -1384,34 +1466,37 @@ def show_analysis(df, allowed_dept):
         fig2.update_layout(height=580)
         st.plotly_chart(fig2, use_container_width=True)
 
-        # أفضل 3 بنود وأضعف 3 بنود
+        # أفضل 3 بنود وأضعف 3 بنود — Power BI Style
         df_items_sorted = df_items.sort_values("النسبة", ascending=False)
         col_best, col_worst = st.columns(2)
+
+        def _insight_card_html(title, rows_df, card_type="best"):
+            rows_html = ""
+            for rank, (_, row) in enumerate(rows_df.iterrows(), start=1):
+                rows_html += f"""
+                <div class="insight-row">
+                    <div class="insight-rank">{rank}</div>
+                    <div class="insight-name">{row['الاسم']}</div>
+                    <div class="insight-percent">{row['النسبة']}%</div>
+                </div>"""
+            return f"""
+            <div class="insight-wrap {card_type}">
+                <div class="insight-title">{title}</div>
+                {rows_html}
+            </div>"""
+
         with col_best:
-            st.markdown("""<div style="background:#f0fdf4; border-radius:12px; padding:14px 18px; margin-bottom:8px;">
-                <div style="font-size:15px; font-weight:800; color:#065f46; margin-bottom:10px;">🏆 أفضل 3 بنود أداءً</div>""",
-                unsafe_allow_html=True)
-            for _, row in df_items_sorted.head(3).iterrows():
-                st.markdown(f"""
-                <div style="display:flex; justify-content:space-between; align-items:center;
-                            background:white; border-radius:8px; padding:8px 12px; margin-bottom:6px; gap:8px;">
-                    <span style="font-weight:700; color:#111827; font-size:13px">{row['الاسم']}</span>
-                    <span style="font-size:15px; font-weight:900; color:#10b981; flex-shrink:0">{row['النسبة']}%</span>
-                </div>""", unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown(
+                _insight_card_html("🏆 أفضل 3 بنود أداء", df_items_sorted.head(3), "best"),
+                unsafe_allow_html=True
+            )
 
         with col_worst:
-            st.markdown("""<div style="background:#fff7ed; border-radius:12px; padding:14px 18px; margin-bottom:8px;">
-                <div style="font-size:15px; font-weight:800; color:#9a3412; margin-bottom:10px;">⚠️ أضعف 3 بنود تحتاج تطوير</div>""",
-                unsafe_allow_html=True)
-            for _, row in df_items_sorted.tail(3).iterrows():
-                st.markdown(f"""
-                <div style="display:flex; justify-content:space-between; align-items:center;
-                            background:white; border-radius:8px; padding:8px 12px; margin-bottom:6px; gap:8px;">
-                    <span style="font-weight:700; color:#111827; font-size:13px">{row['الاسم']}</span>
-                    <span style="font-size:15px; font-weight:900; color:#f472b6; flex-shrink:0">{row['النسبة']}%</span>
-                </div>""", unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
+            weakest_df = df_items_sorted.tail(3).sort_values("النسبة", ascending=True)
+            st.markdown(
+                _insight_card_html("⚠️ أضعف 3 بنود تحتاج تطوير", weakest_df, "weak"),
+                unsafe_allow_html=True
+            )
 
         with st.expander("📋 عرض جدول البنود التفصيلي"):
             st.dataframe(df_items_sorted[["الاسم", "النسبة", "الحكم"]], use_container_width=True, hide_index=True)
@@ -2030,5 +2115,6 @@ st.markdown("""
     <span>تصميم وبرمجة: <span class="highlight">أ. عفاف حسين</span></span>
 </div>
 """, unsafe_allow_html=True)
+
 
 

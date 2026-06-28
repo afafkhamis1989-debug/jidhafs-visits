@@ -408,6 +408,7 @@ st.markdown("""
     border-bottom:1px solid #e5e7eb;
 }
 .insight-row{
+    direction:rtl;
     display:grid;
     grid-template-columns:42px 1fr 74px;
     gap:12px;
@@ -433,6 +434,7 @@ st.markdown("""
 .insight-wrap.best .insight-rank{background:linear-gradient(135deg,#059669,#10b981);} 
 .insight-wrap.weak .insight-rank{background:linear-gradient(135deg,#ea580c,#f472b6);} 
 .insight-name{
+    text-align:right;
     font-size:13px;
     font-weight:800;
     color:#111827;
@@ -844,6 +846,120 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
         ]))
         return tbl
 
+    def _clean_pdf_text(value):
+        """ينظف النصوص قبل إدخالها في Paragraph حتى لا تتسبب وسوم HTML أو رموز غريبة في أخطاء ReportLab."""
+        if value is None:
+            return ""
+        try:
+            if pd.isna(value):
+                return ""
+        except Exception:
+            pass
+        text = str(value).replace("\xa0", " ").strip()
+        for old, newv in [("<br/>", "\n"), ("<br>", "\n"), ("</br>", "\n"), ("<br />", "\n")]:
+            text = text.replace(old, newv)
+        import re, html
+        text = re.sub(r"<[^>]+>", " ", text)
+        text = html.unescape(text)
+        text = re.sub(r"[ \t]+", " ", text)
+        text = re.sub(r"\n\s*\n+", "\n", text)
+        return text.strip()
+
+    def _unique_values_for_col(dataframe, col_name, max_items=8):
+        if col_name not in dataframe.columns:
+            return []
+        vals = []
+        for raw in dataframe[col_name].dropna().tolist():
+            txt = _clean_pdf_text(raw)
+            if not txt:
+                continue
+            # نفصل النصوص الطويلة إذا كانت على أسطر
+            parts = [p.strip(" -•\t") for p in txt.split("\n") if p.strip(" -•\t")]
+            for part in parts:
+                if part and part not in vals:
+                    vals.append(part)
+                if len(vals) >= max_items:
+                    return vals
+        return vals
+
+    def _notes_box(title, dataframe, col_names, accent_color="#2563eb"):
+        """ينشئ صندوق ملاحظات آمن بدون استخدام <br/> داخل Paragraph."""
+        blocks = []
+        header_style = ParagraphStyle(
+            "note_header_" + str(abs(hash(title))),
+            fontName=_reg_bold, fontSize=10.5, alignment=TA_RIGHT,
+            leading=14, textColor=colors.HexColor(accent_color)
+        )
+        body_style = ParagraphStyle(
+            "note_body_" + str(abs(hash(title))),
+            fontName=_reg_font, fontSize=9.2, alignment=TA_RIGHT,
+            leading=13.5, textColor=colors.HexColor("#111827")
+        )
+        for col_name in col_names:
+            vals = _unique_values_for_col(dataframe, col_name, max_items=8)
+            if vals:
+                blocks.append(Paragraph(ar(col_name), header_style))
+                for v in vals:
+                    blocks.append(Paragraph(ar("• " + v), body_style))
+                blocks.append(Spacer(1, 0.08*cm))
+        if not blocks:
+            return None
+        box = Table([[blocks]], colWidths=[16.2*cm])
+        box.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#f8fafc")),
+            ("BOX", (0,0), (-1,-1), 0.6, colors.HexColor("#e5e7eb")),
+            ("LINEBEFORE", (0,0), (0,-1), 4, colors.HexColor(accent_color)),
+            ("VALIGN", (0,0), (-1,-1), "TOP"),
+            ("TOPPADDING", (0,0), (-1,-1), 8),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 6),
+            ("LEFTPADDING", (0,0), (-1,-1), 10),
+            ("RIGHTPADDING", (0,0), (-1,-1), 10),
+        ]))
+        return box
+
+    def _add_professional_summary():
+        teacher_selected = bool(filter_info and str(filter_info.get("اسم المعلمة", "الكل")).strip() != "الكل")
+        if not teacher_selected or filtered_df.empty:
+            return
+        story.append(Spacer(1, 0.38*cm))
+        story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#dbeafe")))
+        story.append(Paragraph(ar("الخلاصة المهنية"), S["h2"]))
+
+        # الزيارة الصفية / زيارات القيادة
+        visit_like = filtered_df[
+            filtered_df.get("نوع السجل", pd.Series([""]*len(filtered_df), index=filtered_df.index)).astype(str).str.contains("زيارة|صفية", na=False) |
+            filtered_df.get("الزائر", pd.Series([""]*len(filtered_df), index=filtered_df.index)).astype(str).str.contains("زيارة|القيادة|الأيام", na=False)
+        ] if "نوع السجل" in filtered_df.columns or "الزائر" in filtered_df.columns else filtered_df
+        if not visit_like.empty:
+            box = _notes_box("زيارة صفية", visit_like, ["نجاحات المعلم", "جوانب بحاجة إلى تطوير", "الدعم المقدم لها", "توظيف جوانب التميز لديها", "مدى التحسين في الأداء"], "#2563eb")
+            if box:
+                story.append(Paragraph(ar("زيارات صفية / زيارات القيادة"), S["h2"]))
+                story.append(box)
+
+        # التقييم الذاتي
+        self_eval = filtered_df[
+            filtered_df.get("نوع السجل", pd.Series([""]*len(filtered_df), index=filtered_df.index)).astype(str).str.contains("تقييم ذاتي", na=False) |
+            filtered_df.get("الزائر", pd.Series([""]*len(filtered_df), index=filtered_df.index)).astype(str).str.contains("التقييم الذاتي", na=False)
+        ] if "نوع السجل" in filtered_df.columns or "الزائر" in filtered_df.columns else filtered_df.iloc[0:0]
+        if not self_eval.empty:
+            box = _notes_box("التقييم الذاتي", self_eval, ["نقاط القوة في أدائي العام", "نقاط الضعف التي تحتاج إلى تطوير", "أبرز نقاط القوة", "أبرز الجوانب التي تحتاج إلى تطوير", "الدعم المطلوب من زيارات القيادة الوسطى", "مقترحاتي لتطوير أدائي"], "#10b981")
+            if box:
+                story.append(Spacer(1, 0.2*cm))
+                story.append(Paragraph(ar("التقييم الذاتي"), S["h2"]))
+                story.append(box)
+
+        # التوأمة الموجهة
+        twinning = filtered_df[
+            filtered_df.get("نوع السجل", pd.Series([""]*len(filtered_df), index=filtered_df.index)).astype(str).str.contains("توأمة|توامة", na=False) |
+            filtered_df.get("الزائر", pd.Series([""]*len(filtered_df), index=filtered_df.index)).astype(str).str.contains("التوأمة|التوامة", na=False)
+        ] if "نوع السجل" in filtered_df.columns or "الزائر" in filtered_df.columns else filtered_df.iloc[0:0]
+        if not twinning.empty:
+            box = _notes_box("التوأمة الموجهة", twinning, ["الأهداف التعليمية للحصة", "أساليب واستراتيجيات التدريس الملحوظة", "ما الذي يمكن أن أستفيد منه لتطوير ممارساتي التدريسية", "أفكار جديدة يمكن أن أستفيد منها لتطوير ممارساتي التدريسية", "توصيات المعلم المزور"], "#8b5cf6")
+            if box:
+                story.append(Spacer(1, 0.2*cm))
+                story.append(Paragraph(ar("التوأمة الموجهة"), S["h2"]))
+                story.append(box)
+
     story = []
 
     # ── غلاف ──────────────────────────────────────────────────────────────
@@ -922,10 +1038,12 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
     story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#dbeafe")))
     story.append(Paragraph(ar("تحليل المجالات الخمسة"), S["h2"]))
 
+    # جدول واحد مدمج: المجال + النسبة + الرسم البياني + الحكم
     domain_rows = [[
-        Paragraph(ar("الحكم"),    S["tbl_hdr"]),
-        Paragraph(ar("النسبة %"), S["tbl_hdr"]),
-        Paragraph(ar("المجال"),   S["tbl_hdr"]),
+        Paragraph(ar("الحكم"),       S["tbl_hdr"]),
+        Paragraph(ar("الرسم البياني"), S["tbl_hdr"]),
+        Paragraph(ar("النسبة %"),    S["tbl_hdr"]),
+        Paragraph(ar("المجال"),      S["tbl_hdr"]),
     ]]
     domain_colors_map = []
     for domain, items in ITEMS_STRUCTURE.items():
@@ -938,61 +1056,30 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
             jd = get_general_judgment(dp)
             jc = JCOLORS.get(jd, colors.HexColor("#2563eb"))
             domain_rows.append([
-                Paragraph(ar(jd),  S["tbl_cell"]),
+                Paragraph(ar(jd), S["tbl_cell"]),
+                _pbar(dp, jc, 5.8),
                 Paragraph(ar(f"{dp}%"), S["tbl_num"]),
-                Paragraph(ar(domain),  S["tbl_cell"]),
+                Paragraph(ar(domain), S["tbl_cell"]),
             ])
             domain_colors_map.append(jc)
 
-    dom_tbl = Table(domain_rows, colWidths=[4*cm, 2.5*cm, 9*cm])
+    dom_tbl = Table(domain_rows, colWidths=[3.5*cm, 6.0*cm, 2.1*cm, 4.6*cm], repeatRows=1)
     dom_style = [
         ("BACKGROUND",   (0,0), (-1, 0), colors.HexColor("#0f2044")),
         ("TEXTCOLOR",    (0,0), (-1, 0), colors.white),
         ("ROWBACKGROUNDS",(0,1),(-1,-1),[colors.white, colors.HexColor("#f8fafc")]),
         ("BOX",          (0,0), (-1,-1), 0.5, colors.HexColor("#e5e7eb")),
-        ("INNERGRID",    (0,0), (-1,-1), 0.5, colors.HexColor("#e5e7eb")),
-        ("TOPPADDING",   (0,0), (-1,-1), 7),
-        ("BOTTOMPADDING",(0,0), (-1,-1), 7),
+        ("INNERGRID",    (0,0), (-1,-1), 0.35, colors.HexColor("#e5e7eb")),
+        ("TOPPADDING",   (0,0), (-1,-1), 6),
+        ("BOTTOMPADDING",(0,0), (-1,-1), 6),
         ("VALIGN",       (0,0), (-1,-1), "MIDDLE"),
     ]
     for ri, jc in enumerate(domain_colors_map, start=1):
         dom_style.append(("TEXTCOLOR", (0, ri), (0, ri), jc))
         dom_style.append(("FONTNAME",  (0, ri), (0, ri), _reg_bold))
-        dom_style.append(("LINERIGHT", (2, ri), (2, ri), 3, jc))
+        dom_style.append(("LINERIGHT", (3, ri), (3, ri), 3, jc))
     dom_tbl.setStyle(TableStyle(dom_style))
     story.append(dom_tbl)
-
-    # رسم بياني مبسط للمجالات داخل ملف PDF
-    if domain_rows and len(domain_rows) > 1:
-        story.append(Spacer(1, 0.35*cm))
-        story.append(Paragraph(ar("رسم بياني للمجالات"), S["h2"]))
-        chart_rows = [[Paragraph(ar("النسبة"), S["tbl_hdr"]), Paragraph(ar("الرسم البياني"), S["tbl_hdr"]), Paragraph(ar("المجال"), S["tbl_hdr"] )]]
-        # إعادة بناء بيانات المجالات من الجدول أعلاه
-        for domain, items in ITEMS_STRUCTURE.items():
-            dcols = [f"بند {n}" for n, _ in items if f"بند {n}" in filtered_df.columns]
-            vals = []
-            for dc in dcols:
-                vals.extend(filtered_df[dc].map(JUDGMENT_WEIGHTS).dropna().tolist())
-            if vals:
-                dp = round((sum(vals)/(len(vals)*4))*100, 1)
-                jd = get_general_judgment(dp)
-                jc = JCOLORS.get(jd, colors.HexColor("#2563eb"))
-                chart_rows.append([
-                    Paragraph(ar(f"{dp}%"), S["tbl_num"]),
-                    _pbar(dp, jc, 7.2),
-                    Paragraph(ar(domain), S["tbl_cell"]),
-                ])
-        chart_tbl = Table(chart_rows, colWidths=[2.0*cm, 7.4*cm, 6.0*cm])
-        chart_tbl.setStyle(TableStyle([
-            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#0f2044")),
-            ("TEXTCOLOR", (0,0), (-1,0), colors.white),
-            ("BOX", (0,0), (-1,-1), 0.5, colors.HexColor("#e5e7eb")),
-            ("INNERGRID", (0,0), (-1,-1), 0.35, colors.HexColor("#e5e7eb")),
-            ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
-            ("TOPPADDING", (0,0), (-1,-1), 5),
-            ("BOTTOMPADDING", (0,0), (-1,-1), 5),
-        ]))
-        story.append(chart_tbl)
 
     # رسم توزيع الأحكام الكلي
     item_cols_pdf = [f"بند {i}" for i in range(1,19) if f"بند {i}" in filtered_df.columns]
@@ -1131,8 +1218,11 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
         ]))
         story.append(item_chart_tbl)
 
+        # ── الخلاصة المهنية للتقرير الفردي ─────────────────────────────────
+        _add_professional_summary()
+
         # ── جدول المعلمات ─────────────────────────────────────────────────
-        if "اسم المعلمة" in filtered_df.columns:
+        if "اسم المعلمة" in filtered_df.columns and not (filter_info and str(filter_info.get("اسم المعلمة", "الكل")).strip() != "الكل"):
             story.append(Spacer(1, 0.6*cm))
             story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#dbeafe")))
             story.append(Paragraph(ar("أداء المعلمات"), S["h2"]))

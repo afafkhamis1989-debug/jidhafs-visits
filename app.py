@@ -555,10 +555,13 @@ def show_analysis(df, allowed_dept):
         filtered = filtered[filtered["الشهر"].astype(str) == month]
 
     with col4:
-        rtypes = ["الكل"] + sorted(filtered["نوع السجل"].dropna().astype(str).unique().tolist())
-        rtype = st.selectbox("📌 نوع السجل", rtypes)
-    if rtype != "الكل":
-        filtered = filtered[filtered["نوع السجل"].astype(str) == rtype]
+        if "الزائر" in filtered.columns:
+            visitor_types = ["الكل"] + sorted(filtered["الزائر"].dropna().astype(str).unique().tolist())
+            visitor = st.selectbox("👁️ نوع الزيارة", visitor_types)
+        else:
+            visitor = "الكل"
+    if visitor != "الكل" and "الزائر" in filtered.columns:
+        filtered = filtered[filtered["الزائر"].astype(str) == visitor]
 
     if allowed_dept == "الكل":
         with col5:
@@ -605,22 +608,33 @@ def show_analysis(df, allowed_dept):
     </div>
     """, unsafe_allow_html=True)
 
-    # ── 1b. توزيع أنواع السجلات (إضافة جديدة) ────────────────────────────
-    if "نوع السجل" in filtered.columns:
-        type_counts = filtered["نوع السجل"].value_counts()
-        if len(type_counts) > 1:
-            cols_tc = st.columns(len(type_counts))
-            type_icons = {"زيارة صفية": "🏫", "تقييم ذاتي": "📝", "توأمة موجهة": "🤝"}
-            for i, (rtype_name, cnt) in enumerate(type_counts.items()):
-                icon = type_icons.get(rtype_name, "📌")
-                with cols_tc[i]:
-                    st.markdown(f"""
-                    <div style="background:white; border-radius:12px; padding:14px; text-align:center;
-                                box-shadow:0 2px 8px rgba(0,0,0,0.06); border-top:3px solid #2563eb; margin-bottom:12px;">
-                        <div style="font-size:24px">{icon}</div>
-                        <div style="font-size:22px; font-weight:900; color:#111827">{cnt}</div>
-                        <div style="font-size:13px; color:#6b7280; font-weight:600">{rtype_name}</div>
-                    </div>""", unsafe_allow_html=True)
+    # ── 1b. توزيع أنواع الزيارات ──────────────────────────────────────────────
+    if "الزائر" in filtered.columns:
+        visitor_counts = filtered["الزائر"].dropna().value_counts()
+        if len(visitor_counts) >= 1:
+            visitor_icons = {
+                "زيارة القيادة العليا لجميع المعلمات":  "👑",
+                "زيارة القيادة العليا للقيادة الوسطى":  "🏛️",
+                "زيارة الأيام الحية للقيادة الوسطى":    "📅",
+                "زيارة الأيام الحية لجميع المعلمات":    "🗓️",
+                "زيارة القيادة الوسطى لجميع المعلمات":  "🔍",
+                "التقييم الذاتي":                        "📝",
+                "التوأمة الموجهة":                       "🤝",
+            }
+            n_cols = min(len(visitor_counts), 4)
+            rows = [list(visitor_counts.items())[i:i+n_cols] for i in range(0, len(visitor_counts), n_cols)]
+            for row_items in rows:
+                cols_vc = st.columns(len(row_items))
+                for i, (vtype, cnt) in enumerate(row_items):
+                    icon = visitor_icons.get(vtype, "📌")
+                    with cols_vc[i]:
+                        st.markdown(f"""
+                        <div style="background:white; border-radius:12px; padding:12px 10px; text-align:center;
+                                    box-shadow:0 2px 8px rgba(0,0,0,0.06); border-top:3px solid #2563eb; margin-bottom:12px;">
+                            <div style="font-size:22px">{icon}</div>
+                            <div style="font-size:22px; font-weight:900; color:#111827">{cnt}</div>
+                            <div style="font-size:11px; color:#6b7280; font-weight:600; line-height:1.3">{vtype}</div>
+                        </div>""", unsafe_allow_html=True)
 
     # ── 2. DOMAINS ────────────────────────────────────────────────────────────
     section_title("🧩", "تحليل المجالات الخمسة")
@@ -1092,6 +1106,9 @@ def show_analysis(df, allowed_dept):
 
             # نأخذ البيانات من df الكامل (بدون فلتر الفصل) لكن مع الفلاتر الأخرى
             df_compare = df.copy()
+            # نفس السنة الدراسية المختارة في الفلتر
+            if year != "الكل" and "السنة الدراسية" in df_compare.columns:
+                df_compare = df_compare[df_compare["السنة الدراسية"].astype(str) == year]
             if allowed_dept != "الكل":
                 df_compare = df_compare[df_compare["القسم الأكاديمي"].apply(normalize_text) == normalize_text(allowed_dept)]
 

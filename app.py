@@ -10,11 +10,12 @@ import sys
 import subprocess
 import time
 
-PATCH_VERSION = "REAL11_FILTER_AWARE_COMPLIANCE_PERIOD_FIXED"
+PATCH_VERSION = "REAL13_DUPLICATE_VISIT_QUALITY_CHECK_FIXED"
 
 # ✅ PATCH_VERSION: 2026-06-28_REAL_FIX_HTML_MONTHLY_PDF_NOTES_SUPPORT_SELF_ONLY_REAL2
 # ✅ REAL2: notes are filtered by record type; support/proposals only from self-evaluation rows
 # ✅ REAL3: hide qualitative notes when teacher=all; comparisons ignore teacher filter
+# ✅ REAL13: duplicate visit quality check + unique visited teachers KPI
 
 # ── PDF — استيراد المكتبات والخط العربي تلقائياً ─────────────────────────────
 # ملاحظة:
@@ -925,6 +926,82 @@ def _is_self_evaluation(df_part):
     return txt.str.contains("تقييم ذاتي|التقييم الذاتي|استماره التقييم الذاتي", regex=True, na=False)
 
 
+def _visit_record_category(row):
+    """
+    اسم نوع الزيارة المستخدم في فحص التكرار.
+    لا ندمج الأنواع المختلفة؛ التقييم الذاتي والتوأمة والزيارة الصفية لا تعتبر تكراراً لبعضها.
+    """
+    vals = []
+    for c in ["الزائر", "نوع السجل"]:
+        try:
+            v = row.get(c, "")
+            if pd.notna(v) and str(v).strip():
+                vals.append(str(v).strip())
+        except Exception:
+            pass
+    return vals[0] if vals else "غير محدد"
+
+
+def detect_duplicate_visit_records(scope_df):
+    """
+    فحص جودة البيانات:
+    السجل يعتبر مكرراً إذا تطابق:
+    السنة الدراسية + الفصل الدراسي + الشهر + اسم المعلمة + نوع الزيارة.
+    """
+    required = ["السنة الدراسية", "الفصل الدراسي", "الشهر", "اسم المعلمة"]
+    if scope_df is None or scope_df.empty or any(c not in scope_df.columns for c in required):
+        return pd.DataFrame(columns=["السنة الدراسية", "الفصل الدراسي", "الشهر", "القسم الأكاديمي", "اسم المعلمة", "نوع الزيارة", "عدد السجلات", "السجلات الزائدة"])
+
+    q = scope_df.copy()
+    q["نوع الزيارة"] = q.apply(_visit_record_category, axis=1)
+
+    for c in required:
+        q[c] = q[c].fillna("").astype(str).str.strip()
+    q = q[q["اسم المعلمة"].ne("") & q["الشهر"].ne("") & q["الفصل الدراسي"].ne("") & q["السنة الدراسية"].ne("")]
+    if q.empty:
+        return pd.DataFrame(columns=["السنة الدراسية", "الفصل الدراسي", "الشهر", "القسم الأكاديمي", "اسم المعلمة", "نوع الزيارة", "عدد السجلات", "السجلات الزائدة"])
+
+    group_cols = ["السنة الدراسية", "الفصل الدراسي", "الشهر", "اسم المعلمة", "نوع الزيارة"]
+    agg = q.groupby(group_cols, dropna=False).size().reset_index(name="عدد السجلات")
+    dup = agg[agg["عدد السجلات"] > 1].copy()
+    if dup.empty:
+        return pd.DataFrame(columns=["السنة الدراسية", "الفصل الدراسي", "الشهر", "القسم الأكاديمي", "اسم المعلمة", "نوع الزيارة", "عدد السجلات", "السجلات الزائدة"])
+
+    if "القسم الأكاديمي" in q.columns:
+        dept_map = q.groupby(group_cols)["القسم الأكاديمي"].first().reset_index()
+        dup = dup.merge(dept_map, on=group_cols, how="left")
+    else:
+        dup["القسم الأكاديمي"] = ""
+
+    if "ID" in q.columns:
+        ids_map = q.groupby(group_cols)["ID"].apply(lambda s: "، ".join([str(x) for x in s.dropna().astype(str).tolist()[:6]])).reset_index(name="معرّفات السجلات")
+        dup = dup.merge(ids_map, on=group_cols, how="left")
+    else:
+        dup["معرّفات السجلات"] = ""
+
+    dup["السجلات الزائدة"] = dup["عدد السجلات"] - 1
+    ordered_cols = ["السنة الدراسية", "الفصل الدراسي", "الشهر", "القسم الأكاديمي", "اسم المعلمة", "نوع الزيارة", "عدد السجلات", "السجلات الزائدة", "معرّفات السجلات"]
+    return dup[ordered_cols].sort_values(["السنة الدراسية", "الفصل الدراسي", "الشهر", "القسم الأكاديمي", "اسم المعلمة"]).reset_index(drop=True)
+
+
+def count_unique_visited_teachers(scope_df):
+    """
+    يحسب عدد المعلمات المزارات مرة واحدة فقط لكل معلمة ضمن الفلاتر الحالية،
+    مع استبعاد التقييم الذاتي والتوأمة من عداد الزيارات الصفية.
+    """
+    if scope_df is None or scope_df.empty or "اسم المعلمة" not in scope_df.columns:
+        return 0
+    mask = ~(_is_self_evaluation(scope_df))
+    try:
+        txt = _combined_visit_text(scope_df)
+        mask &= ~txt.str.contains("توام|توأم", regex=True, na=False)
+    except Exception:
+        pass
+    cleaned_names = scope_df[mask]["اسم المعلمة"].dropna().astype(str).str.strip()
+    cleaned_names = cleaned_names[cleaned_names.ne("")]
+    return int(cleaned_names.nunique())
+
+
 def _selected_months_for_compliance(visits_scope, selected_month, selected_sem):
     if selected_month != "الكل":
         return [selected_month]
@@ -1393,7 +1470,43 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
         ("LINEABOVE",   (3,0), (3,-1), 2, j_color),
     ]))
     story.append(kpi_tbl)
-    story.append(Spacer(1, 0.35*cm))
+    story.append(Spacer(1, 0.25*cm))
+
+    # ── فحص جودة البيانات في PDF: الزيارات المكررة ───────────────────────
+    try:
+        dup_pdf_df = detect_duplicate_visit_records(filtered_df)
+    except Exception:
+        dup_pdf_df = pd.DataFrame()
+    if dup_pdf_df is not None and not dup_pdf_df.empty:
+        story.append(Paragraph(ar("فحص جودة البيانات - زيارات مكررة تحتاج مراجعة"), S["h2"]))
+        dup_rows = [[
+            Paragraph(ar("عدد السجلات"), S["tbl_hdr"]),
+            Paragraph(ar("نوع الزيارة"), S["tbl_hdr"]),
+            Paragraph(ar("الشهر"), S["tbl_hdr"]),
+            Paragraph(ar("اسم المعلمة"), S["tbl_hdr"]),
+        ]]
+        for _, dr in dup_pdf_df.head(12).iterrows():
+            dup_rows.append([
+                Paragraph(ar(str(dr.get("عدد السجلات", ""))), S["tbl_num"]),
+                Paragraph(ar(str(dr.get("نوع الزيارة", ""))), S["tbl_cell"]),
+                Paragraph(ar(str(dr.get("الشهر", ""))), S["tbl_num"]),
+                Paragraph(ar(str(dr.get("اسم المعلمة", ""))), S["tbl_cell"]),
+            ])
+        dup_tbl = Table(dup_rows, colWidths=[2.2*cm, 5.0*cm, 2.3*cm, 6.5*cm], repeatRows=1)
+        dup_tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f97316")),
+            ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#fff7ed")]),
+            ("BOX", (0,0), (-1,-1), 0.5, colors.HexColor("#fed7aa")),
+            ("INNERGRID", (0,0), (-1,-1), 0.35, colors.HexColor("#fed7aa")),
+            ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+            ("TOPPADDING", (0,0), (-1,-1), 5),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+        ]))
+        story.append(dup_tbl)
+        story.append(Spacer(1, 0.25*cm))
+
+    story.append(Spacer(1, 0.10*cm))
 
     # ── الخلاصة المهنية للتقرير الفردي ───────────────────────────────────
     def _clean_pdf_note(value):
@@ -1874,15 +1987,18 @@ def show_analysis(df, allowed_dept):
     n_records = len(filtered)
     n_teachers = filtered["اسم المعلمة"].nunique() if "اسم المعلمة" in filtered.columns else 0
 
-    # حساب عدد الزيارات الصفية المنجزة (غير التقييم الذاتي)
-    n_classroom = len(filtered[filtered["نوع السجل"] == "زيارة صفية"]) if "نوع السجل" in filtered.columns else n_records
+    # حساب المعلمات المزارات مرة واحدة فقط + فحص التكرارات حسب السنة/الفصل/الشهر/المعلمة/نوع الزيارة
+    n_classroom = count_unique_visited_teachers(filtered)
+    duplicate_visits_df = detect_duplicate_visit_records(filtered)
+    n_duplicate_excess = int(duplicate_visits_df["السجلات الزائدة"].sum()) if duplicate_visits_df is not None and not duplicate_visits_df.empty and "السجلات الزائدة" in duplicate_visits_df.columns else 0
     pcolor = percent_color(percent)
 
     st.markdown(f"""
     <div class="kpi-grid">
-        {kpi_card_html("إجمالي السجلات", n_records, "blue", "زيارة / تقييم")}
-        {kpi_card_html("الزيارات الصفية", n_classroom, "blue", "زيارة منجزة")}
-        {kpi_card_html("عدد المعلمات", n_teachers, "blue", "معلمة مشمولة")}
+        {kpi_card_html("إجمالي السجلات", n_records, "blue", "كل الاستجابات")}
+        {kpi_card_html("المعلمات المزارات", n_classroom, "blue", "تحسب المعلمة مرة واحدة")}
+        {kpi_card_html("زيارات مكررة", n_duplicate_excess, "amber" if n_duplicate_excess else "green", "تحتاج مراجعة" if n_duplicate_excess else "لا توجد")}
+        {kpi_card_html("عدد المعلمات", n_teachers, "blue", "معلمة في البيانات")}
         {kpi_card_html("النسبة العامة", f"{percent}%", pcolor)}
         <div class="kpi-card {pcolor}">
             <div class="kpi-label">الحكم العام</div>
@@ -1918,6 +2034,24 @@ def show_analysis(df, allowed_dept):
                             <div style="font-size:22px; font-weight:900; color:#111827">{cnt}</div>
                             <div style="font-size:11px; color:#6b7280; font-weight:600; line-height:1.3">{vtype}</div>
                         </div>""", unsafe_allow_html=True)
+
+    # ── 1c. فحص جودة البيانات: الزيارات المكررة ───────────────────────────────
+    if 'duplicate_visits_df' in locals() and duplicate_visits_df is not None and not duplicate_visits_df.empty:
+        section_title("🧪", "فحص جودة البيانات")
+        st.warning(
+            f"⚠️ يوجد {n_duplicate_excess} سجل زائد مكرر. "
+            "يعتبر السجل مكرراً إذا تطابقت السنة الدراسية والفصل والشهر واسم المعلمة ونوع الزيارة."
+        )
+        with st.expander("🔁 عرض الزيارات المكررة التي تحتاج مراجعة", expanded=True):
+            st.dataframe(duplicate_visits_df, use_container_width=True, hide_index=True)
+            csv_dup = duplicate_visits_df.to_csv(index=False).encode("utf-8-sig")
+            st.download_button(
+                "⬇️ تحميل الزيارات المكررة CSV",
+                csv_dup,
+                "duplicate_visit_records.csv",
+                "text/csv",
+                key="dl_duplicate_visits"
+            )
 
     # ── 2. DOMAINS ────────────────────────────────────────────────────────────
     section_title("🧩", "تحليل المجالات الخمسة")
@@ -2552,6 +2686,9 @@ def show_analysis(df, allowed_dept):
         if n_no_visit > 0:
             alerts.append(("warning", f"{n_no_visit} معلمة لم تُسجَّل لهن زيارة صفية بعد"))
 
+    if 'duplicate_visits_df' in locals() and duplicate_visits_df is not None and not duplicate_visits_df.empty:
+        alerts.append(("warning", f"يوجد {n_duplicate_excess} سجل زيارة مكرر يحتاج مراجعة قبل اعتماد التقرير"))
+
     if alerts:
         for atype, amsg in alerts:
             if atype == "success":
@@ -2951,6 +3088,7 @@ st.markdown("""
     <span>تصميم وبرمجة: <span class="highlight">أ. عفاف حسين</span></span>
 </div>
 """, unsafe_allow_html=True)
+
 
 
 

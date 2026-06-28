@@ -1,10 +1,9 @@
 import streamlit as st
 import pandas as pd
 import requests
-import plotly.express as px
 import plotly.graph_objects as go
-import uuid
 
+# مصدر البيانات: اربطي Microsoft Forms بملف Excel ثم اجعلي التطبيق يقرأ الشيت النهائي بنفس الأعمدة
 GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbziZ27mG690ZT02YN1LqbvWJLZ-rprnHK9qmXDDXcTvQVmnB-Phpm0J4DKjsg6Ts07xJQ/exec"
 HEADER_PATH = "header.png"
 
@@ -339,55 +338,6 @@ def get_sheet_data(sheet_name):
     res = requests.get(GOOGLE_SCRIPT_URL, params={"sheet_name": sheet_name}, timeout=25)
     res.raise_for_status()
     return pd.DataFrame(res.json())
-
-
-SHEET_HEADERS = [
-    "السنة الدراسية", "الفصل الدراسي", "القسم الأكاديمي", "اسم المعلمة",
-    "الزائر", "الشهر",
-    *[f"بند {i}" for i in range(1, 19)],
-    "نجاحات المعلم", "جوانب بحاجة إلى تطوير",
-    "نقاط القوة في أدائي العام", "نقاط الضعف التي تحتاج إلى تطوير",
-    "الدعم المطلوب من زيارات القيادة الوسطى", "مقترحاتي لتطوير أدائي",
-    "المعلم الزائر", "القسم الأكاديمي للمعلم الزائر",
-    "اسم المدرسة للمعلم الزائر", "اسم المدرسة للمعلم المزور",
-    "الأهداف التعليمية للحصة", "أساليب واستراتيجيات التدريس الملحوظة",
-    "ما الذي يمكن أن أستفيد منه لتطوير ممارساتي التدريسية",
-    "أفكار جديدة يمكن أن أستفيد منها لتطوير ممارساتي التدريسية",
-    "توصيات المعلم المزور",
-]
-
-
-def setup_sheet_headers():
-    """ترسل رؤوس الأعمدة لـ Google Sheet إذا الصف الأول فارغ"""
-    try:
-        payload = {
-            "sheet_name": "Classroom_Visits",
-            "action": "setup_headers",
-            "headers": SHEET_HEADERS
-        }
-        requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=15)
-    except Exception:
-        pass
-
-
-def send_to_google_sheet(row):
-    """
-    ترتيب الأعمدة مطابق تماماً لرؤوس Google Sheet:
-    السنة الدراسية | الفصل الدراسي | القسم الأكاديمي | اسم المعلمة | الزائر | الشهر |
-    بند 1..18 | نوع السجل | نجاحات المعلم | جوانب بحاجة إلى تطوير |
-    نقاط القوة في أدائي العام | نقاط الضعف التي تحتاج إلى تطوير |
-    الدعم المطلوب من زيارات القيادة الوسطى | مقترحاتي لتطوير أدائي |
-    المعلم الزائر | القسم الأكاديمي للمعلم الزائر | اسم المدرسة للمعلم الزائر |
-    اسم المدرسة للمعلم المزور | الأهداف التعليمية للحصة |
-    أساليب واستراتيجيات التدريس الملحوظة |
-    ما الذي يمكن أن أستفيد منه لتطوير ممارساتي التدريسية |
-    أفكار جديدة يمكن أن أستفيد منها لتطوير ممارساتي التدريسية |
-    توصيات المعلم المزور
-    """
-    payload = {"sheet_name": "Classroom_Visits", "row": row}
-    res = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=25)
-    res.raise_for_status()
-    return res.json()
 
 
 def calculate_percentage(df):
@@ -748,212 +698,6 @@ def show_analysis(df, allowed_dept):
             st.dataframe(filtered[show_cols], use_container_width=True, hide_index=True)
 
 
-# ─── Entry Form ──────────────────────────────────────────────────────────────
-def show_form(teachers_df, allowed_dept):
-    st.markdown("""
-    <div class="page-header">
-        <div>
-            <div class="page-header-title">📝 استمارة الزيارة الصفية</div>
-            <div class="page-header-sub">تسجيل بيانات الزيارة أو التقييم الذاتي أو التوأمة الموجهة</div>
-        </div>
-    </div>""", unsafe_allow_html=True)
-
-    if "القسم الأكاديمي" not in teachers_df.columns or "اسم المعلمة" not in teachers_df.columns:
-        st.error("⚠️ تأكد من وجود عمودي: القسم الأكاديمي، اسم المعلمة في شيت Teachers")
-        st.stop()
-
-    # ── Basic Info ────────────────────────────────────────────────────────────
-    st.markdown('<div class="form-section">', unsafe_allow_html=True)
-    section_title("👤", "البيانات الأساسية")
-
-    departments = sorted(teachers_df["القسم الأكاديمي"].dropna().astype(str).str.strip().unique())
-    c1, c2, c3 = st.columns(3)
-
-    with c1:
-        if allowed_dept == "الكل":
-            selected_dept = st.selectbox("القسم الأكاديمي", departments, key="f_dept")
-        else:
-            selected_dept = allowed_dept
-            st.info(f"🏫 القسم: **{selected_dept}**")
-
-    filtered_teachers = teachers_df[
-        teachers_df["القسم الأكاديمي"].apply(normalize_text) == normalize_text(selected_dept)
-    ]["اسم المعلمة"].dropna().astype(str).str.strip().unique()
-    filtered_teachers = sorted([n for n in filtered_teachers if n and n.lower() != "nan"])
-
-    with c2:
-        teacher_name = st.selectbox("اسم المعلمة", filtered_teachers, key="f_teacher") if filtered_teachers else st.text_input("اسم المعلمة", key="f_teacher")
-    with c3:
-        visit_type = st.selectbox("نوع / جهة الزيارة", VISITOR_TYPES, key="f_visit_type")
-
-    c4, c5, c6 = st.columns(3)
-    with c4:
-        school_year = st.selectbox("السنة الدراسية", ["2024-2025","2025-2026","2026-2027"], key="f_year")
-    with c5:
-        semester = st.selectbox("الفصل الدراسي", ["الفصل الدراسي الأول","الفصل الدراسي الثاني"], key="f_semester")
-    with c6:
-        month = st.selectbox("الشهر", MONTHS, key="f_month")
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    is_self = visit_type == "التقييم الذاتي"
-    is_peer = visit_type == "التوأمة الموجهة"
-
-    # ── Observation Items ─────────────────────────────────────────────────────
-    section_title("📋", "بنود الملاحظة الصفية")
-
-    answers = {}
-    for domain, items in ITEMS_STRUCTURE.items():
-        icon = DOMAIN_ICONS.get(domain, "📌")
-        st.markdown(f"""
-        <div style="background:linear-gradient(135deg,#0f2044,#1a3a6e);
-                    color:white; border-radius:10px; padding:12px 18px;
-                    font-size:17px; font-weight:800; margin:18px 0 12px 0;">
-            {icon} &nbsp; {domain}
-        </div>""", unsafe_allow_html=True)
-
-        for item_num, item_text in items:
-            col_txt, col_radio = st.columns([3, 2])
-            with col_txt:
-                st.markdown(f"""
-                <div class="item-card">
-                    <div style="display:flex; align-items:flex-start; gap:10px;">
-                        <span class="item-num">{item_num}</span>
-                        <span class="item-text">{item_text}</span>
-                    </div>
-                </div>""", unsafe_allow_html=True)
-            with col_radio:
-                answers[f"بند {item_num}"] = st.radio(
-                    "الحكم", JUDGMENT_ORDER,
-                    horizontal=False,
-                    key=f"item_{item_num}",
-                    label_visibility="collapsed"
-                )
-
-    # ── Closing Notes ─────────────────────────────────────────────────────────
-    st.markdown('<div class="form-section">', unsafe_allow_html=True)
-    section_title("📝", "البيانات الختامية")
-
-    strengths=improvements=weaknesses=support=suggestions=""
-    visiting_teacher=visiting_dept=visiting_school=visited_school=""
-    lesson_goals=observed_strats=useful_practices=new_ideas=recommendations=""
-
-    if is_self:
-        c1, c2 = st.columns(2)
-        with c1:
-            strengths  = st.text_area("✅ نقاط القوة في أدائي العام", height=100, key="f_strengths")
-            support    = st.text_area("🤝 الدعم المطلوب من زيارات القيادة الوسطى", height=100, key="f_support")
-        with c2:
-            weaknesses  = st.text_area("⚠️ نقاط الضعف التي تحتاج إلى تطوير", height=100, key="f_weaknesses")
-            suggestions = st.text_area("💡 مقترحاتي لتطوير أدائي", height=100, key="f_suggestions")
-
-    elif is_peer:
-        c1, c2 = st.columns(2)
-        with c1:
-            visiting_teacher = st.text_input("👩‍🏫 المعلمة الزائرة", key="f_visiting_teacher")
-            visiting_dept    = st.text_input("🏫 قسم المعلمة الزائرة", key="f_visiting_dept")
-            visiting_school  = st.text_input("🏛️ مدرسة المعلمة الزائرة", key="f_visiting_school")
-        with c2:
-            visited_school = st.text_input("🏛️ مدرسة المعلمة المزورة", key="f_visited_school")
-        lesson_goals      = st.text_area("🎯 الأهداف التعليمية للحصة", height=80, key="f_lesson_goals")
-        observed_strats   = st.text_area("📖 أساليب واستراتيجيات التدريس الملحوظة", height=80, key="f_observed_strats")
-        useful_practices  = st.text_area("💡 ما الذي يمكن أن أستفيد منه لتطوير ممارساتي", height=80, key="f_useful_practices")
-        new_ideas         = st.text_area("🚀 أفكار جديدة يمكن أن أستفيد منها", height=80, key="f_new_ideas")
-        recommendations   = st.text_area("📋 توصيات المعلمة المزورة", height=80, key="f_recommendations")
-    else:
-        c1, c2 = st.columns(2)
-        with c1:
-            strengths    = st.text_area("✅ نجاحات المعلمة", height=120, key="f_strengths")
-        with c2:
-            improvements = st.text_area("📈 جوانب بحاجة إلى تطوير", height=120, key="f_improvements")
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # ── Save ─────────────────────────────────────────────────────────────────
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # رسالة النجاح مع زر تسجيل جديد
-    if st.session_state.get("save_success"):
-        st.success("✅ تم حفظ السجل بنجاح!")
-        if st.button("🔄 تسجيل زيارة جديدة"):
-            # امسح كل مفاتيح الفورم من session_state
-            form_keys = [k for k in st.session_state.keys() 
-                         if k.startswith("item_") or k.startswith("f_") or k == "save_success"]
-            for k in form_keys:
-                del st.session_state[k]
-            st.session_state["cache_needs_clear"] = True
-            st.rerun()
-        return
-
-    if st.session_state.get("saving", False):
-        st.info("⏳ جارٍ الحفظ... الرجاء الانتظار")
-        return
-
-    if st.button("💾  حفظ السجل"):
-        # ── تحقق من التكرار قبل الحفظ ──────────────────────────────────────
-        try:
-            existing_df = get_sheet_data("Classroom_Visits")
-            existing_df.columns = [str(c).strip() for c in existing_df.columns]
-            
-            duplicate = existing_df[
-                (existing_df.get("اسم المعلمة", pd.Series(dtype=str)).astype(str) == teacher_name) &
-                (existing_df.get("الزائر", pd.Series(dtype=str)).astype(str) == visit_type) &
-                (existing_df.get("الشهر", pd.Series(dtype=str)).astype(str) == month) &
-                (existing_df.get("السنة الدراسية", pd.Series(dtype=str)).astype(str) == school_year) &
-                (existing_df.get("الفصل الدراسي", pd.Series(dtype=str)).astype(str) == semester)
-            ]
-            
-            if not duplicate.empty:
-                st.error(f"⚠️ تم تسجيل هذه الزيارة مسبقاً! المعلمة **{teacher_name}** لديها سجل لـ **{visit_type}** في شهر **{month}**.")
-                return
-        except Exception:
-            pass  # إذا ما قدر يتحقق يكمل الحفظ
-        
-        st.session_state["saving"] = True
-        record_type = ("تقييم ذاتي" if is_self else "توأمة موجهة" if is_peer else "زيارة صفية")
-        
-        # ID فريد لكل عملية حفظ — يمنع التكرار حتى لو ضُغط الزر مرتين
-        if "current_submission_id" not in st.session_state:
-            st.session_state["current_submission_id"] = str(uuid.uuid4())
-        
-        row = {
-            "submission_id": st.session_state["current_submission_id"],
-            "السنة الدراسية": school_year,
-            "الفصل الدراسي": semester,
-            "القسم الأكاديمي": selected_dept,
-            "اسم المعلمة": teacher_name,
-            "الزائر": visit_type,
-            "الشهر": month,
-            **{f"بند {i}": answers[f"بند {i}"] for i in range(1,19)},
-            "نجاحات المعلم": strengths if not is_self else "",
-            "جوانب بحاجة إلى تطوير": improvements,
-            "نقاط القوة في أدائي العام": strengths if is_self else "",
-            "نقاط الضعف التي تحتاج إلى تطوير": weaknesses,
-            "الدعم المطلوب من زيارات القيادة الوسطى": support,
-            "مقترحاتي لتطوير أدائي": suggestions,
-            "المعلم الزائر": visiting_teacher,
-            "القسم الأكاديمي للمعلم الزائر": visiting_dept,
-            "اسم المدرسة للمعلم الزائر": visiting_school,
-            "اسم المدرسة للمعلم المزور": visited_school,
-            "الأهداف التعليمية للحصة": lesson_goals,
-            "أساليب واستراتيجيات التدريس الملحوظة": observed_strats,
-            "ما الذي يمكن أن أستفيد منه لتطوير ممارساتي التدريسية": useful_practices,
-            "أفكار جديدة يمكن أن أستفيد منها لتطوير ممارساتي التدريسية": new_ideas,
-            "توصيات المعلم المزور": recommendations,
-        }
-        try:
-            with st.spinner("⏳ جارٍ الحفظ..."):
-                send_to_google_sheet(row)
-            st.session_state["saving"] = False
-            st.session_state["save_success"] = True
-            # امسح الـ ID حتى لو أعيد الإرسال يكون ID جديد
-            st.session_state.pop("current_submission_id", None)
-            st.rerun()
-        except Exception as e:
-            st.session_state["saving"] = False
-            st.error(f"❌ حدث خطأ أثناء الحفظ: {str(e)}")
-
-
 # ─── Auth ─────────────────────────────────────────────────────────────────────
 try:
     st.image(HEADER_PATH, use_container_width=True)
@@ -987,62 +731,34 @@ allowed_dept = st.session_state["allowed_dept"]
 # Sidebar nav
 st.sidebar.markdown("---")
 dept_label = "🛡️ مدير النظام" if allowed_dept == "الكل" else f"🏫 {allowed_dept}"
-st.sidebar.markdown(f"<div style='color:#7eb3f7; font-size:14px; font-weight:700; margin-bottom:8px'>{dept_label}</div>", unsafe_allow_html=True)
+st.sidebar.markdown(
+    f"<div style='color:#7eb3f7; font-size:14px; font-weight:700; margin-bottom:8px'>{dept_label}</div>",
+    unsafe_allow_html=True
+)
 
-page = st.sidebar.radio("", ["📊 لوحة التحليل", "📝 إدخال زيارة صفية"], label_visibility="collapsed")
 st.sidebar.markdown("---")
 if st.sidebar.button("🚪 تسجيل الخروج"):
     st.session_state.update({"logged_in": False, "allowed_dept": None})
     st.rerun()
 
-# زر إعداد أعمدة الشيت — للمدير فقط
-if allowed_dept == "الكل":
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("<div style='color:#7eb3f7; font-size:13px; font-weight:700'>⚙️ أدوات المدير</div>", unsafe_allow_html=True)
-    if st.sidebar.button("🔧 إعداد أعمدة Google Sheet"):
-        setup_sheet_headers()
-        st.sidebar.success("✅ تم إرسال الأعمدة!")
-
 # Page Header
-page_titles = {
-    "📊 لوحة التحليل": ("📊 لوحة التحليل التفاعلية", "تحليل شامل لبيانات الزيارات الصفية"),
-    "📝 إدخال زيارة صفية": ("📝 استمارة الزيارة الصفية", "تسجيل بيانات زيارة أو تقييم ذاتي"),
-}
-ptitle, psub = page_titles.get(page, ("", ""))
+st.markdown(f"""
+<div class="page-header">
+    <div>
+        <div class="page-header-title">📊 لوحة التحليل التفاعلية</div>
+        <div class="page-header-sub">عرض وتحليل بيانات الزيارات الصفية القادمة من Microsoft Forms</div>
+    </div>
+    <div class="page-header-badge">{dept_label}</div>
+</div>""", unsafe_allow_html=True)
 
-if page == "📊 لوحة التحليل":
-    # امسح الكاش إذا كان في حفظ جديد
-    if st.session_state.get("cache_needs_clear"):
-        st.cache_data.clear()
-        st.session_state["cache_needs_clear"] = False
-    st.markdown(f"""
-    <div class="page-header">
-        <div>
-            <div class="page-header-title">{ptitle}</div>
-            <div class="page-header-sub">{psub}</div>
-        </div>
-        <div class="page-header-badge">{dept_label}</div>
-    </div>""", unsafe_allow_html=True)
-
-# Load data
+# Load data only — no internal Streamlit forms
 try:
-    teachers_df = get_sheet_data("Teachers")
+    visits_df = get_sheet_data("Classroom_Visits")
+    visits_df.columns = [str(c).strip() for c in visits_df.columns]
+    show_analysis(visits_df, allowed_dept)
 except Exception as e:
-    st.error("⚠️ تعذّر تحميل بيانات المعلمات")
+    st.error("⚠️ تعذّر تحميل بيانات الزيارات")
     st.write(e)
-    st.stop()
-
-# Route
-if page == "📝 إدخال زيارة صفية":
-    show_form(teachers_df, allowed_dept)
-else:
-    try:
-        visits_df = get_sheet_data("Classroom_Visits")
-        visits_df.columns = [str(c).strip() for c in visits_df.columns]
-        show_analysis(visits_df, allowed_dept)
-    except Exception as e:
-        st.error("⚠️ تعذّر تحميل بيانات الزيارات")
-        st.write(e)
 
 # Footer
 st.markdown("""
@@ -1052,3 +768,4 @@ st.markdown("""
     <span>تصميم وبرمجة: <span class="highlight">أ. عفاف حسين</span></span>
 </div>
 """, unsafe_allow_html=True)
+

@@ -9,7 +9,7 @@ import os
 import sys
 import subprocess
 
-# ✅ PATCH_VERSION: 2026-06-28_REAL_FIX_HTML_MONTHLY_PDF_NOTES_DASHBOARD_ADMIN_QUALITATIVE
+# ✅ PATCH_VERSION: 2026-06-28_REAL_FIX_HTML_MONTHLY_PDF_NOTES_CORRECT_BY_TYPE_SECTION_ADMIN
 
 # ── PDF — استيراد المكتبات والخط العربي تلقائياً ─────────────────────────────
 # ملاحظة:
@@ -975,15 +975,16 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
             "توظيف جوانب التميز لديها",
             "مدى التحسين في الأداء",
         ], "#10b981")
+        # التقييم الذاتي: لا يشمل حقول "أبرز نقاط القوة/أبرز الجوانب" لأنها تخص التوأمة/الملاحظات الموجهة
         _append_notes_section("الخلاصة المهنية - التقييم الذاتي", [
             "نقاط القوة في أدائي العام",
             "نقاط الضعف التي تحتاج إلى تطوير",
-            "أبرز نقاط القوة",
-            "أبرز الجوانب التي تحتاج إلى تطوير",
             "الدعم المطلوب من زيارات القيادة الوسطى",
             "مقترحاتي لتطوير أدائي",
         ], "#2563eb")
         _append_notes_section("الخلاصة المهنية - التوأمة الموجهة", [
+            "أبرز نقاط القوة",
+            "أبرز الجوانب التي تحتاج إلى تطوير",
             "الأهداف التعليمية للحصة",
             "أساليب واستراتيجيات التدريس الملحوظة",
             "ما الذي يمكن أن أستفيد منه لتطوير ممارساتي التدريسية",
@@ -1004,15 +1005,16 @@ def generate_pdf(filtered_df, allowed_dept, report_type="summary", dept_name="ا
 
     if report_type == "detailed" and selected_teacher == "الكل" and len(filtered_df) > 0:
         strength_cols_pdf = [
-            "نجاحات المعلم", "نقاط القوة في أدائي العام", "أبرز نقاط القوة",
+            "نجاحات المعلم", "نقاط القوة في أدائي العام",
             "توظيف جوانب التميز لديها", "مدى التحسين في الأداء",
         ]
         dev_cols_pdf = [
             "جوانب بحاجة إلى تطوير", "نقاط الضعف التي تحتاج إلى تطوير",
-            "أبرز الجوانب التي تحتاج إلى تطوير", "الدعم المطلوب من زيارات القيادة الوسطى",
+            "الدعم المطلوب من زيارات القيادة الوسطى",
             "الدعم المقدم لها", "مقترحاتي لتطوير أدائي",
         ]
         twin_cols_pdf = [
+            "أبرز نقاط القوة", "أبرز الجوانب التي تحتاج إلى تطوير",
             "الأهداف التعليمية للحصة", "أساليب واستراتيجيات التدريس الملحوظة",
             "ما الذي يمكن أن أستفيد منه لتطوير ممارساتي التدريسية",
             "أفكار جديدة يمكن أن أستفيد منها لتطوير ممارساتي التدريسية",
@@ -2137,30 +2139,44 @@ def show_analysis(df, allowed_dept):
     has_notes_dashboard = any((c in filtered.columns and filtered[c].dropna().astype(str).str.strip().ne("").any()) for c in note_cols_all)
     if has_notes_dashboard:
         section_title("📝", "نقاط القوة والجوانب التي تحتاج إلى تطوير")
-        st.caption("تظهر هذه الخلاصة حسب الفلاتر المختارة، وتُطبع كذلك في التقرير التفصيلي عند اختيار معلمة محددة.")
-        col_note1, col_note2 = st.columns(2)
-        with col_note1:
+        st.caption("تظهر هذه الخلاصة حسب الفلاتر المختارة، وتُطبع كذلك في التقرير التفصيلي. تم فصل حقول التقييم الذاتي عن حقول التوأمة حتى لا تختلط البيانات.")
+        col_visit, col_self, col_twin = st.columns(3)
+        with col_visit:
             html_parts = []
             html_parts.append(_render_note_card("💪 نجاحات المعلم", _note_values_for_dashboard(filtered, "نجاحات المعلم"), "#10b981"))
-            html_parts.append(_render_note_card("🌟 نقاط القوة في أدائي العام", _note_values_for_dashboard(filtered, "نقاط القوة في أدائي العام"), "#10b981"))
-            html_parts.append(_render_note_card("⭐ أبرز نقاط القوة", _note_values_for_dashboard(filtered, "أبرز نقاط القوة"), "#10b981"))
-            html_parts.append(_render_note_card("✅ توظيف جوانب التميز لديها", _note_values_for_dashboard(filtered, "توظيف جوانب التميز لديها"), "#10b981"))
-            html = "".join([x for x in html_parts if x])
-            if html:
-                st.markdown(html, unsafe_allow_html=True)
-            else:
-                st.info("لا توجد نقاط قوة مسجلة حسب الفلاتر الحالية.")
-        with col_note2:
-            html_parts = []
             html_parts.append(_render_note_card("🛠️ جوانب بحاجة إلى تطوير", _note_values_for_dashboard(filtered, "جوانب بحاجة إلى تطوير"), "#f97316"))
-            html_parts.append(_render_note_card("⚠️ نقاط الضعف التي تحتاج إلى تطوير", _note_values_for_dashboard(filtered, "نقاط الضعف التي تحتاج إلى تطوير"), "#f97316"))
-            html_parts.append(_render_note_card("📌 أبرز الجوانب التي تحتاج إلى تطوير", _note_values_for_dashboard(filtered, "أبرز الجوانب التي تحتاج إلى تطوير"), "#f97316"))
-            html_parts.append(_render_note_card("🤝 الدعم المطلوب / المقدم", _note_values_for_dashboard(filtered, "الدعم المطلوب من زيارات القيادة الوسطى") + _note_values_for_dashboard(filtered, "الدعم المقدم لها"), "#3b82f6"))
+            html_parts.append(_render_note_card("🤝 الدعم المقدم لها", _note_values_for_dashboard(filtered, "الدعم المقدم لها"), "#3b82f6"))
+            html_parts.append(_render_note_card("✅ توظيف جوانب التميز لديها", _note_values_for_dashboard(filtered, "توظيف جوانب التميز لديها"), "#10b981"))
+            html_parts.append(_render_note_card("📈 مدى التحسين في الأداء", _note_values_for_dashboard(filtered, "مدى التحسين في الأداء"), "#2563eb"))
             html = "".join([x for x in html_parts if x])
             if html:
-                st.markdown(html, unsafe_allow_html=True)
+                st.markdown("<div style='font-weight:900;color:#0f2044;margin-bottom:8px;text-align:center;'>زيارات صفية / قيادة</div>" + html, unsafe_allow_html=True)
             else:
-                st.info("لا توجد جوانب تطوير مسجلة حسب الفلاتر الحالية.")
+                st.info("لا توجد ملاحظات للزيارات الصفية حسب الفلاتر الحالية.")
+        with col_self:
+            html_parts = []
+            html_parts.append(_render_note_card("🌟 نقاط القوة في أدائي العام", _note_values_for_dashboard(filtered, "نقاط القوة في أدائي العام"), "#10b981"))
+            html_parts.append(_render_note_card("⚠️ نقاط الضعف التي تحتاج إلى تطوير", _note_values_for_dashboard(filtered, "نقاط الضعف التي تحتاج إلى تطوير"), "#f97316"))
+            html_parts.append(_render_note_card("🤝 الدعم المطلوب من زيارات القيادة الوسطى", _note_values_for_dashboard(filtered, "الدعم المطلوب من زيارات القيادة الوسطى"), "#3b82f6"))
+            html_parts.append(_render_note_card("💡 مقترحاتي لتطوير أدائي", _note_values_for_dashboard(filtered, "مقترحاتي لتطوير أدائي"), "#2563eb"))
+            html = "".join([x for x in html_parts if x])
+            if html:
+                st.markdown("<div style='font-weight:900;color:#0f2044;margin-bottom:8px;text-align:center;'>التقييم الذاتي</div>" + html, unsafe_allow_html=True)
+            else:
+                st.info("لا توجد ملاحظات للتقييم الذاتي حسب الفلاتر الحالية.")
+        with col_twin:
+            html_parts = []
+            html_parts.append(_render_note_card("⭐ أبرز نقاط القوة", _note_values_for_dashboard(filtered, "أبرز نقاط القوة"), "#10b981"))
+            html_parts.append(_render_note_card("📌 أبرز الجوانب التي تحتاج إلى تطوير", _note_values_for_dashboard(filtered, "أبرز الجوانب التي تحتاج إلى تطوير"), "#f97316"))
+            html_parts.append(_render_note_card("🎯 الأهداف التعليمية للحصة", _note_values_for_dashboard(filtered, "الأهداف التعليمية للحصة"), "#7c3aed"))
+            html_parts.append(_render_note_card("📚 أساليب واستراتيجيات التدريس الملحوظة", _note_values_for_dashboard(filtered, "أساليب واستراتيجيات التدريس الملحوظة"), "#7c3aed"))
+            html_parts.append(_render_note_card("💡 أفكار/ممارسات مستفادة", _note_values_for_dashboard(filtered, "ما الذي يمكن أن أستفيد منه لتطوير ممارساتي التدريسية") + _note_values_for_dashboard(filtered, "أفكار جديدة يمكن أن أستفيد منها لتطوير ممارساتي التدريسية"), "#7c3aed"))
+            html_parts.append(_render_note_card("📝 توصيات المعلم المزور", _note_values_for_dashboard(filtered, "توصيات المعلم المزور"), "#7c3aed"))
+            html = "".join([x for x in html_parts if x])
+            if html:
+                st.markdown("<div style='font-weight:900;color:#0f2044;margin-bottom:8px;text-align:center;'>التوأمة / الملاحظات الموجهة</div>" + html, unsafe_allow_html=True)
+            else:
+                st.info("لا توجد ملاحظات للتوأمة حسب الفلاتر الحالية.")
 
     # ── 10c. لوحة الأدمن: تحليل نوعي مجمع للملاحظات ──────────────────────────
     if allowed_dept == "الكل" and has_notes_dashboard:
@@ -2178,15 +2194,16 @@ def show_analysis(df, allowed_dept):
             return pd.DataFrame([{"الملاحظة": k, "عدد التكرار": v} for k, v in freq.items()]).sort_values("عدد التكرار", ascending=False) if freq else pd.DataFrame(columns=["الملاحظة", "عدد التكرار"])
 
         strength_cols_admin = [
-            "نجاحات المعلم", "نقاط القوة في أدائي العام", "أبرز نقاط القوة",
+            "نجاحات المعلم", "نقاط القوة في أدائي العام",
             "توظيف جوانب التميز لديها", "مدى التحسين في الأداء",
         ]
         dev_cols_admin = [
             "جوانب بحاجة إلى تطوير", "نقاط الضعف التي تحتاج إلى تطوير",
-            "أبرز الجوانب التي تحتاج إلى تطوير", "الدعم المطلوب من زيارات القيادة الوسطى",
+            "الدعم المطلوب من زيارات القيادة الوسطى",
             "الدعم المقدم لها", "مقترحاتي لتطوير أدائي",
         ]
         twin_cols_admin = [
+            "أبرز نقاط القوة", "أبرز الجوانب التي تحتاج إلى تطوير",
             "الأهداف التعليمية للحصة", "أساليب واستراتيجيات التدريس الملحوظة",
             "ما الذي يمكن أن أستفيد منه لتطوير ممارساتي التدريسية",
             "أفكار جديدة يمكن أن أستفيد منها لتطوير ممارساتي التدريسية",
